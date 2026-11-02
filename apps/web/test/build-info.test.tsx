@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('build information (injected at build time)', () => {
   it('takes the version from the root package.json', () => {
-    expect(rootVersion).toBe('0.1.0');
+    expect(rootVersion).toBe('0.1.1');
     expect(readBuildInfo({}, () => '').version).toBe(rootVersion);
   });
 

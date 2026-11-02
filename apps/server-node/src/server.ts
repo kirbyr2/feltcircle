@@ -320,6 +320,9 @@ export async function startServer(config: ServerConfig, opts: ServerOptions = {}
   }, config.cleanupIntervalMs);
   sweeper.unref();
   db.deleteExpired(now());
+  // Rooms whose showdown countdown or disconnect auto-fold was pending when the
+  // server stopped: load them so their timers fire even if nobody reconnects.
+  for (const id of db.roomsWithTimers(now())) void loadRoom(id).catch((e) => log('load error', id, e));
 
   await new Promise<void>((resolve) => server.listen(config.port, config.host, resolve));
   const addr = server.address();

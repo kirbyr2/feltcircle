@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROTOCOL_VERSION, type Command } from '@feltcircle/game-protocol';
-import { applyCommand, connectSeat, createLocalRoom, createOnlineRoom, joinSeat, type RoomState } from '@feltcircle/room-core';
+import { PROTOCOL_VERSION, SHOWDOWN_FOLD_MS, type Command } from '@feltcircle/game-protocol';
+import { applyCommand, connectSeat, createLocalRoom, createOnlineRoom, joinSeat, tick, type RoomState } from '@feltcircle/room-core';
 import { createRoomRequest } from '@feltcircle/game-session';
 import type { TournamentState } from '@feltcircle/poker-engine';
 import { loadConfig } from '../apps/server-node/src/config.js';
@@ -20,7 +20,8 @@ const LATE_JOIN = 'late-join' as const;
 /**
  * A realistic script: raises, a short all-in, side pots, a split pot, an
  * elimination, an administrative chip adjustment that revives the busted
- * player, a late joiner, victory claims, a claim withdrawal and a muck.
+ * player, a late joiner, showdown declarations (Win, a conflicting Win, a
+ * withdrawal, a Fold) and the host's settlement.
  */
 const SCRIPT: Array<[number, Command] | typeof LATE_JOIN> = [
   [1, { type: 'host:start' }],
@@ -30,19 +31,20 @@ const SCRIPT: Array<[number, Command] | typeof LATE_JOIN> = [
   [3, { type: 'act', action: { type: 'raise', amount: 200 } }],
   [1, { type: 'act', action: { type: 'call' } }],
   [2, { type: 'act', action: { type: 'fold' } }],
-  [1, { type: 'host:advance' }],
+  // Flop starts automatically.
   [3, { type: 'act', action: { type: 'bet', amount: 300 } }],
   [1, { type: 'act', action: { type: 'raise', amount: 900 } }],
   [3, { type: 'act', action: { type: 'allin' } }],
   [1, { type: 'act', action: { type: 'call' } }],
-  [1, { type: 'host:advance' }],
+  // Seat 3 is all-in: no more betting. Board run out, hands revealed, host confirms.
+  [1, { type: 'host:showdown' }],
   [1, { type: 'host:award', winners: [[1, 3]] }],
   [1, { type: 'host:nextHand' }],
   // Hand 2: D=2 SB=3 BB=1
   [2, { type: 'act', action: { type: 'allin' } }],
   [3, { type: 'act', action: { type: 'call' } }],
   [1, { type: 'act', action: { type: 'fold' } }],
-  [1, { type: 'host:advance' }],
+  [1, { type: 'host:showdown' }],
   [1, { type: 'host:award', winners: [[3]] }],
   // Between hands: revive seat 2 and add a late joiner on seat 4.
   [1, { type: 'host:setChips', seat: 2, chips: 1000 }],
@@ -53,28 +55,27 @@ const SCRIPT: Array<[number, Command] | typeof LATE_JOIN> = [
   [4, { type: 'act', action: { type: 'call' } }],
   [1, { type: 'act', action: { type: 'call' } }],
   [2, { type: 'act', action: { type: 'check' } }],
-  [1, { type: 'host:advance' }],
   [1, { type: 'act', action: { type: 'bet', amount: 100 } }],
   [2, { type: 'act', action: { type: 'call' } }],
   [3, { type: 'act', action: { type: 'fold' } }],
   [4, { type: 'act', action: { type: 'call' } }],
-  [1, { type: 'host:advance' }],
   [1, { type: 'act', action: { type: 'check' } }],
   [2, { type: 'act', action: { type: 'check' } }],
   [4, { type: 'act', action: { type: 'check' } }],
-  [1, { type: 'host:advance' }],
   [1, { type: 'act', action: { type: 'check' } }],
   [2, { type: 'act', action: { type: 'check' } }],
   [4, { type: 'act', action: { type: 'check' } }],
-  // Showdown: 2 and 4 claim, 4 withdraws, 1 mucks, host confirms 2.
-  [2, { type: 'claim', won: true }],
-  [4, { type: 'claim', won: true }],
-  [4, { type: 'claim', won: false }],
-  [1, { type: 'muck' }],
+  [1, { type: 'host:showdown' }],
+  // Showdown: 2 declares Win (countdown), 4 also declares Win (conflict → host
+  // judgment), 4 withdraws, 1 folds, host confirms 2.
+  [2, { type: 'declare', declaration: 'win' }],
+  [4, { type: 'declare', declaration: 'win' }],
+  [4, { type: 'declare', declaration: null }],
+  [1, { type: 'declare', declaration: 'fold' }],
   [1, { type: 'host:award', winners: [[2]] }],
 ];
 
-const PER_SEAT = new Set(['act', 'claim', 'muck']);
+const PER_SEAT = new Set(['act', 'declare']);
 
 function normalize(g: TournamentState | null) {
   const c = structuredClone(g) as Record<string, unknown> | null;
@@ -233,15 +234,13 @@ const SPARSE_SCRIPT: Array<[number, Command]> = [
   [3, { type: 'act', action: { type: 'raise', amount: 60 } }],
   [1, { type: 'act', action: { type: 'fold' } }],
   [2, { type: 'act', action: { type: 'call' } }],
-  [1, { type: 'host:advance' }],
   [2, { type: 'act', action: { type: 'check' } }],
   [3, { type: 'act', action: { type: 'check' } }],
-  [1, { type: 'host:advance' }],
   [2, { type: 'act', action: { type: 'check' } }],
   [3, { type: 'act', action: { type: 'check' } }],
-  [1, { type: 'host:advance' }],
   [2, { type: 'act', action: { type: 'check' } }],
   [3, { type: 'act', action: { type: 'check' } }],
+  [1, { type: 'host:showdown' }],
   [1, { type: 'host:award', winners: [[3]] }],
 ];
 const SPARSE_TABLE = [
@@ -346,8 +345,8 @@ describe('seat renumbering consistency', () => {
 // Pre-actions (online only; Local Mode has none): the same rules on every backend.
 // Dealer 1, SB 2, BB 3. Seat 3 pre-selects Check (nothing owed), seat 2 Call Any
 // (10 owed). Seat 1 raises to 60: seat 2 calls automatically, seat 3's Check is
-// cancelled with a notice and seat 3 calls by hand. Between streets seat 3 picks
-// Check/Fold; on the flop seat 2 bets 100, so seat 3 folds automatically.
+// cancelled with a notice and seat 3 calls by hand. The flop starts at once;
+// seat 3 picks Check/Fold, seat 2 bets 100, so seat 3 folds automatically.
 // ---------------------------------------------------------------------------
 
 const PRE_BEFORE_RAISE: Array<[number, Command]> = [
@@ -357,8 +356,8 @@ const PRE_BEFORE_RAISE: Array<[number, Command]> = [
 ];
 const PRE_AFTER_RAISE: Array<[number, Command]> = [
   [3, { type: 'act', action: { type: 'call' } }],
+  // The flop has started (seat 2 to act); seat 3 pre-selects Check/Fold.
   [3, { type: 'setPreAction', preAction: 'checkfold', hand: 1 }],
-  [1, { type: 'host:advance' }],
   [2, { type: 'act', action: { type: 'bet', amount: 100 } }],
   [1, { type: 'act', action: { type: 'fold' } }],
 ];
@@ -485,5 +484,128 @@ describe('pre-action consistency', () => {
     expect(cf.notice).toBe('checkCanceled');
     expect(normalize(node.game)).toEqual(normalize(core.game));
     expect(normalize(cf.game)).toEqual(normalize(core.game));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Showdown countdown: seat 2 declares Win, seat 3 folds by hand, seat 1 says
+// nothing and is folded automatically when the 5 s deadline passes. Local Mode
+// (device timer → tick), Node.js (server timer) and Cloudflare (alarm, with an
+// eviction in between) must settle it identically and exactly once.
+// ---------------------------------------------------------------------------
+
+const SD_SCRIPT: Array<[number, Command]> = [
+  [1, { type: 'host:start' }],
+  [1, { type: 'act', action: { type: 'call' } }],
+  [2, { type: 'act', action: { type: 'call' } }],
+  [3, { type: 'act', action: { type: 'check' } }],
+  ...Array.from({ length: 9 }, (_, i): [number, Command] => [[2, 3, 1][i % 3], { type: 'act', action: { type: 'check' } }]),
+  [1, { type: 'host:showdown' }],
+  [2, { type: 'declare', declaration: 'win', hand: 1 }],
+  [3, { type: 'declare', declaration: 'fold', hand: 1 }],
+];
+const SD_CHIPS = { 1: 1980, 2: 2040, 3: 1980 };
+
+function runShowdownLocal() {
+  let s: RoomState = createLocalRoom({ players: [{ seat: 1 }, { seat: 2 }, { seat: 3 }], now: 0 });
+  for (const [seat, cmd] of SD_SCRIPT) {
+    const c = PER_SEAT.has(cmd.type) ? ({ ...cmd, seat } as Command) : cmd;
+    const r = applyCommand(s, { seat: null, local: true }, c, 0);
+    if (!r.ok) throw new Error(`local ${cmd.type}: ${r.error}`);
+    s = r.state;
+  }
+  expect(s.showdown!.deadline).toBe(SHOWDOWN_FOLD_MS);
+  expect(tick(s, SHOWDOWN_FOLD_MS - 1).changed).toBe(false);
+  s = tick(s, SHOWDOWN_FOLD_MS).state;
+  expect(tick(s, SHOWDOWN_FOLD_MS + 1).changed).toBe(false);
+  return s.game;
+}
+
+async function runShowdownNode() {
+  let clock = 1_000_000;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-sd-'));
+  const srv = await startServer(loadConfig({ PORT: '0', DB_FILE: path.join(dir, 'db.sqlite') }), { log: () => {}, now: () => clock });
+  try {
+    const base = `http://127.0.0.1:${srv.port}`;
+    const created = await createRoomRequest(base, { settings: {}, nickname: '' });
+    if (!created.ok) throw new Error(created.error);
+    const id = created.room.roomId;
+    const t1 = new MemoryTokens();
+    t1.set(id, created.room.token);
+    const c = [client(base, id, t1), client(base, id), client(base, id)];
+    await waitFor(() => c.every((x) => x.session.getSnapshot().connection === 'online'));
+    await c[1].session.join(2, '');
+    await c[2].session.join(3, '');
+    for (const [seat, cmd] of SD_SCRIPT) {
+      const r = await c[seat - 1].session.send(cmd);
+      if (!r.ok) throw new Error(`node ${cmd.type}: ${r.error}`);
+    }
+    const room = (await srv.rooms.get(id))!;
+    expect(room.runtime.state.showdown!.deadline).toBe(clock + SHOWDOWN_FOLD_MS);
+    clock += SHOWDOWN_FOLD_MS;
+    await room.runtime.onWake();
+    await waitFor(() => c.every((x) => x.session.getSnapshot().room?.game?.hand?.phase === 'complete'), 5000, 'settled');
+    const game = c[0].session.getSnapshot().room!.game;
+    for (const x of c) x.session.dispose();
+    return game;
+  } finally {
+    await srv.close();
+  }
+}
+
+async function runShowdownCloudflare() {
+  const ctx = new FakeCtx();
+  let dobj = new RoomDurableObject(ctx as never, {} as never);
+  const settings = { maxPlayers: 6, startingChips: 2000, sb: 10, bb: 20, progression: 'hybrid', levelMinutes: 15, defaultLanguage: 'en' };
+  const res = await dobj.fetch(new Request('https://room/internal/create', { method: 'POST', body: JSON.stringify({ id: 'CFSHD', game: 'texas-holdem', settings, nickname: '', token: 'hosttoken' }) }));
+  expect(res.status).toBe(201);
+  const sockets = [new FakeSocket(), new FakeSocket(), new FakeSocket()];
+  for (const ws of sockets) dobj.accept(ws as never);
+  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: 'hosttoken' }));
+  await dobj.webSocketMessage(sockets[1] as never, JSON.stringify({ t: 'join', seat: 2, nickname: '' }));
+  await dobj.webSocketMessage(sockets[2] as never, JSON.stringify({ t: 'join', seat: 3, nickname: '' }));
+  let n = 0;
+  for (const [seat, cmd] of SD_SCRIPT) {
+    n++;
+    await dobj.webSocketMessage(sockets[seat - 1] as never, JSON.stringify({ t: 'cmd', id: `d${n}`, cmd }));
+    const ack = sockets[seat - 1].messages().find((m) => m.t === 'ack' && m.id === `d${n}`);
+    if (!ack?.ok) throw new Error(`cf ${cmd.type}: ${ack?.error}`);
+  }
+  const stored = (await ctx.storage.get<RoomState>('room'))!;
+  const deadline = stored.showdown!.deadline!;
+  // The alarm is set for the deadline (disconnect auto-folds are later, expiry much later).
+  expect(ctx.storage.alarm).toBe(deadline);
+  expect(sockets[1].last('state').room.showdown).toMatchObject({ claimant: 2, deadline });
+  dobj = new RoomDurableObject(ctx as never, {} as never); // hibernated/evicted before the deadline
+  const realNow = Date.now;
+  try {
+    Date.now = () => deadline - 1;
+    await dobj.alarm(); // early alarm: nothing happens, re-armed for the deadline
+    expect((await ctx.storage.get<RoomState>('room'))!.game!.hand!.phase).toBe('showdown');
+    expect(ctx.storage.alarm).toBe(deadline);
+    Date.now = () => deadline;
+    await dobj.alarm();
+    await dobj.alarm(); // duplicate alarm delivery
+  } finally {
+    Date.now = realNow;
+  }
+  const state = (await ctx.storage.get<RoomState>('room'))!;
+  expect(state.showdown).toBe(null);
+  expect(sockets.map((ws) => ws.last('state').room.game.hand.phase)).toEqual(['complete', 'complete', 'complete']);
+  return state.game;
+}
+
+describe('showdown countdown consistency', () => {
+  it('Local Mode, Node.js and Cloudflare fold automatically at the deadline and settle once', async () => {
+    const local = runShowdownLocal();
+    const node = await runShowdownNode();
+    const cf = await runShowdownCloudflare();
+    expect(local!.chips).toEqual(SD_CHIPS);
+    expect(local!.hand!.log.filter((e) => e.type === 'muck').map((e) => [e.seat, !!e.auto])).toEqual([
+      [3, false],
+      [1, true],
+    ]);
+    expect(normalize(node)).toEqual(normalize(local));
+    expect(normalize(cf)).toEqual(normalize(local));
   });
 });

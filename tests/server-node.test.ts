@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { createRoomRequest, detectBackend, fetchRoomSummary } from '@feltcircle/game-session';
-import { AUTO_FOLD_AFTER_MS, PROTOCOL_VERSION, ROOM_TTL_MS } from '@feltcircle/game-protocol';
+import { AUTO_FOLD_AFTER_MS, PROTOCOL_VERSION, ROOM_TTL_MS, SHOWDOWN_FOLD_MS, type Command } from '@feltcircle/game-protocol';
 import { loadConfig } from '../apps/server-node/src/config.js';
 import { startServer, type RunningServer } from '../apps/server-node/src/server.js';
 import { backupDatabase } from '../apps/server-node/src/db.js';
@@ -56,6 +56,15 @@ async function roomWithPlayers(base: string, n: number) {
   await waitFor(() => players.every((p) => p.session.getSnapshot().room?.seats.filter((s) => s.connected).length === n), 5000, 'all connected');
   return { id, players, s: (seat: number) => players[seat - 1].session };
 }
+
+/** Dealer 1, SB 2, BB 3: everybody calls/checks to the river, then the host confirms the showdown. */
+const TO_SHOWDOWN: Array<[number, Command]> = [
+  [1, { type: 'act', action: { type: 'call' } }],
+  [2, { type: 'act', action: { type: 'call' } }],
+  [3, { type: 'act', action: { type: 'check' } }],
+  ...Array.from({ length: 9 }, (_, i): [number, Command] => [[2, 3, 1][i % 3], { type: 'act', action: { type: 'check' } }]),
+  [1, { type: 'host:showdown' }],
+];
 
 describe('Node.js backend', () => {
   it('reports capabilities and passes detection', async () => {
@@ -167,11 +176,11 @@ describe('Node.js backend', () => {
     expect(stored.game!.seats).toEqual([1, 2, 3]);
   });
 
-  it('asks clients from before seat renumbering (protocol 1) to reload', async () => {
+  it('asks clients of an older protocol (e.g. 1) to reload', async () => {
     const { base } = await boot();
     const created = await createRoomRequest(base, { settings: {}, nickname: '' });
     if (!created.ok) throw new Error(created.error);
-    expect(PROTOCOL_VERSION).toBe(2);
+    expect(PROTOCOL_VERSION).toBeGreaterThan(1);
     const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?room=${created.room.roomId}`);
     const first = new Promise<string>((r) => ws.on('message', (d) => r(d.toString())));
     await new Promise((r) => ws.on('open', r));
@@ -280,6 +289,53 @@ describe('Node.js backend', () => {
     await s(1).send({ type: 'act', action: { type: 'raise', amount: 60 } });
     await waitFor(() => s(3).getSnapshot().room!.game!.hand!.toAct === 3);
     expect(s(3).getSnapshot().room!.game!.hand!.seats.find((x) => x.seat === 2)!.folded).toBe(true);
+  });
+
+  it('showdown: one Win starts a server-side countdown that folds the others when it expires', async () => {
+    const { base, server } = await boot();
+    const { id, s } = await roomWithPlayers(base, 3);
+    await s(1).send({ type: 'host:start' });
+    const before = s(1).getSnapshot().room!.game!.chips;
+    for (const [seat, cmd] of TO_SHOWDOWN) expect((await s(seat).send(cmd)).ok).toBe(true);
+    expect((await s(2).send({ type: 'declare', declaration: 'win', hand: 1 })).ok).toBe(true);
+    // Every client sees the same deadline, set by the server's clock.
+    await waitFor(() => [1, 2, 3].every((n) => s(n).getSnapshot().room!.showdown?.deadline === clock + SHOWDOWN_FOLD_MS), 5000, 'deadline shown');
+    expect(s(3).getSnapshot().room!.showdown).toMatchObject({ declarations: { 2: 'win' }, claimant: 2, manual: false });
+    expect((await s(3).send({ type: 'declare', declaration: 'fold', hand: 1 })).ok).toBe(true);
+    // The timer fires early (clock not yet advanced): nothing happens.
+    const room = (await server.rooms.get(id))!;
+    await room.runtime.onWake();
+    expect(room.runtime.state.game!.hand!.phase).toBe('showdown');
+    clock += SHOWDOWN_FOLD_MS;
+    await room.runtime.onWake();
+    await room.runtime.onWake(); // a second (stale) wake-up changes nothing
+    await waitFor(() => s(1).getSnapshot().room!.game!.hand!.phase === 'complete', 5000, 'settled');
+    const after = s(1).getSnapshot().room!.game!.chips;
+    expect(after).toEqual({ 1: before[1] - 20, 2: before[2] + 40, 3: before[3] - 20 });
+    expect(s(1).getSnapshot().room!.showdown).toBe(null);
+    // A late or repeated declaration cannot settle the hand again.
+    expect((await s(1).send({ type: 'declare', declaration: 'win', hand: 1 })).error).toBe('WRONG_PHASE');
+  });
+
+  it('showdown: a pending deadline survives a restart and fires with nobody connected', async () => {
+    const first = await boot();
+    const { id, s, players } = await roomWithPlayers(first.base, 3);
+    await s(1).send({ type: 'host:start' });
+    const before = s(1).getSnapshot().room!.game!.chips;
+    for (const [seat, cmd] of TO_SHOWDOWN) expect((await s(seat).send(cmd)).ok).toBe(true);
+    expect((await s(3).send({ type: 'declare', declaration: 'win' })).ok).toBe(true);
+    for (const p of players) p.session.dispose();
+    await first.server.close();
+    servers.splice(servers.indexOf(first.server), 1);
+
+    clock += SHOWDOWN_FOLD_MS + 60_000; // the server was down past the deadline
+    const second = await boot(first.dbFile);
+    // Loaded at startup because of its pending timer, no client needed.
+    await waitFor(() => second.server.rooms.has(id), 5000, 'room loaded at startup');
+    const room = (await second.server.rooms.get(id))!;
+    await waitFor(() => room.runtime.state.game!.hand!.phase === 'complete', 5000, 'settled after restart');
+    expect(room.runtime.state.game!.chips).toEqual({ 1: before[1] - 20, 2: before[2] - 20, 3: before[3] + 40 });
+    expect(room.runtime.state.showdown).toBe(null);
   });
 
   it('restores rooms after a server restart (SQLite persistence)', async () => {

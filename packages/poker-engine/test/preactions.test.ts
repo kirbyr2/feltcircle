@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceStreet, legalActions, owedForPreAction, preActionChoices, resolvePreAction } from '../src/index.js';
+import { legalActions, owedForPreAction, preActionChoices, resolvePreAction } from '../src/index.js';
 import { begin, call, fold, play, raise } from './helpers.js';
 
 // Three players: dealer 1, SB 2, BB 3; seat 1 acts first pre-flop.
@@ -20,15 +20,14 @@ describe('pre-action eligibility (amount actually owed)', () => {
     expect(preActionChoices(t.hand!, 3)).toEqual(['fold', 'checkfold', 'callany']);
   });
 
-  it('between streets nothing is owed; folded and finished hands offer nothing', () => {
+  it('a new street starts with nothing owed; folded players are offered nothing', () => {
     let t = play(start(), [
       [1, call],
       [2, call],
     ]);
     t = play(t, [[3, { type: 'check' }]]);
-    expect(t.hand!.phase).toBe('street-complete');
-    expect(preActionChoices(t.hand!, 2)).toEqual(['checkfold', 'check', 'callany']);
-    t = advanceStreet(t);
+    expect(t.hand!.street).toBe('flop');
+    expect(preActionChoices(t.hand!, 3)).toEqual(['checkfold', 'check', 'callany']);
     t = play(t, [[2, fold]]);
     expect(preActionChoices(t.hand!, 2)).toEqual([]);
     expect(owedForPreAction(t.hand!, 2)).toBe(null);

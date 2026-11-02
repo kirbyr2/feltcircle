@@ -290,7 +290,15 @@ function endBettingRound(t: TournamentState) {
   hand.toAct = null;
   const canAct = hand.seats.filter((p) => !p.folded && !p.allIn);
   hand.bettingClosed = canAct.length < 2;
-  hand.phase = hand.street === 'river' ? 'showdown' : 'street-complete';
+  if (hand.bettingClosed || hand.street === 'river') {
+    // No further betting: finish the board (if needed) and reveal; the host confirms the showdown.
+    hand.phase = 'reveal';
+    return;
+  }
+  // Next street right away: its cards are dealt physically before the first player acts.
+  hand.street = STREETS[STREETS.indexOf(hand.street) + 1];
+  hand.phase = 'betting';
+  afterStateChange(t, hand.dealer);
 }
 
 function finishUncontested(t: TournamentState, winner: number) {
@@ -455,17 +463,33 @@ export function applyAction(t0: TournamentState, seat: number, action: PlayerAct
   return t;
 }
 
-/** Host confirms the next physical cards were dealt (or that the board was run out). */
-export function advanceStreet(t0: TournamentState): TournamentState {
+/**
+ * Host confirms that every card is dealt and the hands are revealed: players
+ * may now declare and the host may settle the pots. Only possible once no
+ * further betting can happen (`reveal`).
+ */
+export function beginShowdown(t0: TournamentState): TournamentState {
   const h0 = t0.hand;
   if (!h0) throw new EngineError('NO_HAND');
-  if (h0.phase !== 'street-complete') throw new EngineError('WRONG_PHASE');
+  if (h0.phase !== 'reveal') throw new EngineError('WRONG_PHASE');
+  const t = clone(t0);
+  t.hand!.phase = 'showdown';
+  t.hand!.street = 'river';
+  return t;
+}
+
+/**
+ * Hands stored by an earlier version may wait in the removed
+ * `street-complete` phase: continue them under the current rules (start the
+ * next street, or wait for the showdown confirmation).
+ */
+export function normalizeTournament(t0: TournamentState): TournamentState {
+  const h0 = t0.hand;
+  if (!h0 || (h0.phase as string) !== 'street-complete') return t0;
   const t = clone(t0);
   const hand = t.hand!;
   if (hand.bettingClosed) {
-    // No more betting possible: the remaining board is dealt physically, go to showdown.
-    hand.street = 'river';
-    hand.phase = 'showdown';
+    hand.phase = 'reveal';
     return t;
   }
   hand.street = STREETS[STREETS.indexOf(hand.street) + 1];
@@ -477,12 +501,23 @@ export function advanceStreet(t0: TournamentState): TournamentState {
 }
 
 /**
- * "I lost / muck": a player gives up their claim to every pot at showdown.
- * Not allowed when they are the only remaining contender for a pot (somebody
- * must be able to win it). When every pot is left with a single contender, the
- * hand is settled automatically.
+ * Cards still to be dealt before the current street's first decision, or
+ * null. Shown as "Deal the flop, then …" until somebody acts on the street by
+ * hand (automatic pre-actions may run before the cards are on the table).
  */
-export function muck(t0: TournamentState, seat: number): TournamentState {
+export function streetToDeal(hand: HandState): Exclude<Street, 'preflop'> | null {
+  if (hand.phase !== 'betting' || hand.street === 'preflop') return null;
+  const acted = hand.log.some((e) => e.street === hand.street && !e.auto && e.type !== 'refund' && e.type !== 'win');
+  return acted ? null : hand.street;
+}
+
+/**
+ * Fold at showdown: a player gives up the right to win any pot of this hand
+ * (committed chips stay in the pots). Not allowed when they are the only
+ * remaining contender for a pot (somebody must be able to win it). When every
+ * pot is left with a single contender, the hand is settled automatically.
+ */
+export function muck(t0: TournamentState, seat: number, opts: ApplyOptions = {}): TournamentState {
   const h0 = t0.hand;
   if (!h0) throw new EngineError('NO_HAND');
   if (h0.phase !== 'showdown') throw new EngineError('WRONG_PHASE');
@@ -496,7 +531,7 @@ export function muck(t0: TournamentState, seat: number): TournamentState {
   const p = seatOf(hand, seat);
   p.folded = true;
   p.mucked = true;
-  hand.log.push({ seat, street: hand.street, type: 'muck' });
+  hand.log.push({ seat, street: hand.street, type: 'muck', auto: opts.auto || undefined });
   const pots = computePots(hand.seats);
   if (pots.every((pot) => pot.eligible.length === 1)) {
     completeHand(
@@ -564,16 +599,14 @@ export type PreActionChoice = 'fold' | 'checkfold' | 'check' | 'callany';
 /**
  * Chips `seat` would have to put in if the turn reached them right now, or
  * null when the player cannot pre-select anything (not in the hand, folded,
- * all-in, no betting left). Between streets the next street starts without a
- * bet, so nothing is owed. This is the amount actually owed, not whether
+ * all-in, no betting left). A new street starts without a bet, so nothing is
+ * owed until somebody bets. This is the amount actually owed, not whether
  * somebody raised: a big blind facing only calls owes nothing.
  */
 export function owedForPreAction(hand: HandState, seat: number): number | null {
-  if (hand.phase !== 'betting' && hand.phase !== 'street-complete') return null;
-  if (hand.bettingClosed) return null;
+  if (hand.phase !== 'betting') return null;
   const p = hand.seats.find((s) => s.seat === seat);
   if (!p || p.folded || p.allIn) return null;
-  if (hand.phase === 'street-complete') return 0;
   return Math.max(0, hand.currentBet - p.bet);
 }
 

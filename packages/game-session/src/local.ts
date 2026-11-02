@@ -1,5 +1,5 @@
 import type { Command } from '@feltcircle/game-protocol';
-import { applyCommand, normalizeRoom, toView, type RoomState } from '@feltcircle/room-core';
+import { applyCommand, nextTimerAt, normalizeRoom, tick, toView, type RoomState } from '@feltcircle/room-core';
 import { Emitter, randomId, type CommandOutcome, type GameSession, type SessionSnapshot } from './types.js';
 
 export interface LocalStore {
@@ -23,6 +23,31 @@ export class LocalSession implements GameSession {
     // Games saved on this device by an older version lack newer fields.
     this.state = normalizeRoom(state);
     this.snapshot = this.makeSnapshot(null);
+    this.schedule();
+  }
+
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
+
+  /** Local Mode runs the showdown countdown on this device (same rules as the server). */
+  private schedule() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    const at = nextTimerAt(this.state);
+    if (at === null || this.disposed) return;
+    this.timer = setTimeout(() => void this.onTimer(), Math.max(0, Math.min(at - this.now(), 2 ** 31 - 1)));
+  }
+
+  private async onTimer() {
+    this.timer = null;
+    const r = tick(this.state, this.now());
+    if (r.changed) {
+      this.state = r.state;
+      this.snapshot = this.makeSnapshot(null);
+      this.emitter.emit();
+      await this.store.save(this.state);
+    }
+    this.schedule();
   }
 
   get roomState(): RoomState {
@@ -66,10 +91,15 @@ export class LocalSession implements GameSession {
     }
     this.state = r.state;
     this.snapshot = this.makeSnapshot(null);
+    this.schedule();
     this.emitter.emit();
     await this.store.save(this.state);
     return { ok: true };
   }
 
-  dispose() {}
+  dispose() {
+    this.disposed = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
 }

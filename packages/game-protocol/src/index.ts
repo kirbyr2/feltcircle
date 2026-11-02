@@ -8,14 +8,22 @@ export const APP_ID = 'feltcircle';
  * 2: seats are renumbered when the game starts and `RoomView.viewerSeat` tells
  *    each client its (possibly new) seat. Pre-action `check` (distinct from
  *    `checkfold`), `setPreAction.hand` and `RoomView.preActionNotice`.
+ * 3: streets advance automatically (`reveal` phase, `host:showdown`), showdown
+ *    declarations (`declare`, `RoomView.showdown`) replace `claim`/`muck`.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 10;
 export const MAX_NICKNAME = 20;
 export const MAX_MESSAGE_BYTES = 16 * 1024;
 /** Seconds a player may be disconnected before Auto-Fold is enabled. */
 export const AUTO_FOLD_AFTER_MS = 30_000;
+/**
+ * Showdown: when exactly one player declares Win (single pot, no Tie, no
+ * conflict), every other contender is folded automatically this long after
+ * the declaration unless they select Win or Tie first.
+ */
+export const SHOWDOWN_FOLD_MS = 5_000;
 /** Rooms are kept for 24 hours after the last meaningful activity. */
 export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 /** Exact heartbeat frame (Cloudflare auto-response requires byte-identical text). */
@@ -167,11 +175,30 @@ export interface RoomView {
   pendingImport: SeatChips | null;
   /** Late-join requests waiting for the host (online, after the game started). */
   joinRequests: JoinRequestView[];
-  /** Seats that pressed "I won!" during the current showdown. */
-  claims: number[];
+  /** Showdown declarations and the automatic-fold countdown (null outside the showdown). */
+  showdown: ShowdownView | null;
   log: RoomLogEntry[];
   expiresAt: number | null;
   serverTime: number;
+}
+
+/** A player's showdown declaration. Folding is final and shown through the hand (`mucked`). */
+export type Declaration = 'win' | 'tie';
+
+export interface ShowdownView {
+  /** Declarations of players still contesting the pot(s). */
+  declarations: Record<number, Declaration>;
+  /**
+   * Host judgment required: automatic settlement is off for this showdown
+   * (side pots, a Tie, several Win claims, or a cancelled countdown).
+   */
+  manual: boolean;
+  /** Side pots exist: the host settles every pot. */
+  sidePots: boolean;
+  /** Sole Win claimant while the countdown runs. */
+  claimant: number | null;
+  /** Server time (ms) at which the other contenders fold automatically; null when no countdown runs. */
+  deadline: number | null;
 }
 
 export interface RoomSummary {
@@ -207,14 +234,17 @@ export type Command =
   | { type: 'setAway'; away: boolean; seat?: number }
   | { type: 'leaveSeat' }
   | { type: 'claimHost' }
-  /** Showdown: "I won!" (`won: true`) or withdraw the claim (`won: false`). */
-  | { type: 'claim'; won: boolean; seat?: number }
-  /** Showdown: "I lost / muck" — give up every pot. */
-  | { type: 'muck'; seat?: number }
+  /**
+   * Showdown declaration: Win, Tie, Fold (final: gives up the right to win this
+   * hand's pots), or null to withdraw Win/Tie. `hand` guards against messages
+   * that arrive after the hand moved on.
+   */
+  | { type: 'declare'; declaration: Declaration | 'fold' | null; seat?: number; hand?: number }
   | { type: 'host:start'; dealerSeat?: number }
   | { type: 'host:pause' }
   | { type: 'host:resume' }
-  | { type: 'host:advance' }
+  /** All cards dealt and hands revealed: begin the showdown. */
+  | { type: 'host:showdown' }
   | { type: 'host:award'; winners: number[][] }
   | { type: 'host:nextHand' }
   | { type: 'host:undo' }
@@ -283,7 +313,9 @@ export type ErrorCode =
   | 'UNSUPPORTED_GAME'
   | 'NOT_ELIGIBLE'
   /** The pre-action is not on offer right now (e.g. Check while a call is required) or the hand has moved on. */
-  | 'PRE_ACTION_UNAVAILABLE';
+  | 'PRE_ACTION_UNAVAILABLE'
+  /** A message meant for an earlier hand. */
+  | 'HAND_CHANGED';
 
 // ---------------------------------------------------------------------------
 // Validation (never trust the wire)
@@ -437,12 +469,16 @@ export function validateCommand(c: unknown): Command | null {
     case 'host:addPlayer':
       if (!isSeat(c.seat) || !isInt(c.chips, 1, MAX_CHIPS) || !isStr(c.nickname, 100)) return null;
       return { type: c.type, seat: c.seat, chips: c.chips, nickname: cleanNickname(c.nickname) };
-    case 'claim':
-      if (typeof c.won !== 'boolean' || !optSeat(c.seat)) return null;
-      return { type: 'claim', won: c.won, ...(c.seat !== undefined ? { seat: c.seat as number } : {}) };
-    case 'muck':
-      if (!optSeat(c.seat)) return null;
-      return { type: 'muck', ...(c.seat !== undefined ? { seat: c.seat as number } : {}) };
+    case 'declare': {
+      if (c.declaration !== null && !['win', 'tie', 'fold'].includes(c.declaration as string)) return null;
+      if (!optSeat(c.seat) || (c.hand !== undefined && !isInt(c.hand, 1))) return null;
+      return {
+        type: 'declare',
+        declaration: c.declaration as Declaration | 'fold' | null,
+        ...(c.seat !== undefined ? { seat: c.seat as number } : {}),
+        ...(c.hand !== undefined ? { hand: c.hand as number } : {}),
+      };
+    }
     case 'host:import': {
       const seats = validSeatChips(c.seats);
       if (!seats) return null;
@@ -457,7 +493,7 @@ export function validateCommand(c: unknown): Command | null {
     case 'claimHost':
     case 'host:pause':
     case 'host:resume':
-    case 'host:advance':
+    case 'host:showdown':
     case 'host:nextHand':
     case 'host:undo':
     case 'host:clearImport':

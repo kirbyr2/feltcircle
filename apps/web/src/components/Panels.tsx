@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Confirm } from './ui';
 import type { PreAction } from '@feltcircle/game-protocol';
-import { preActionChoices } from '@feltcircle/poker-engine';
+import { preActionChoices, streetToDeal, type HandState } from '@feltcircle/poker-engine';
 import { useI18n } from '../lib/i18n';
 import { useGame } from './game-context';
 
@@ -51,9 +51,7 @@ export function PreActions({ seat }: { seat: number }) {
   };
   return (
     <div className="panel">
-      <div className="panel-title">
-        {hand.phase === 'betting' && hand.toAct !== null ? t('game.toAct', { name: name(hand.toAct) }) : t('street.waitHost')}
-      </div>
+      <div className="panel-title">{waitingTitle(hand, name, t)}</div>
       <PreActionNotice />
       <div className="pre-row" role="group" aria-label={t('pre.title')}>
         {choices.map((v) => (
@@ -87,90 +85,168 @@ export function PreActions({ seat }: { seat: number }) {
   );
 }
 
+/**
+ * Title for players waiting on someone else. At the start of the flop, turn
+ * and river it also tells the table to deal those cards first.
+ */
+function waitingTitle(hand: HandState, name: (seat: number) => string, t: (k: string, p?: Record<string, string | number>) => string): string {
+  if (hand.toAct === null) return t('common.loading');
+  const deal = streetToDeal(hand);
+  return deal ? t(`deal.${deal}Wait`, { name: name(hand.toAct) }) : t('game.toAct', { name: name(hand.toAct) });
+}
+
 export function WaitingPanel() {
   const { room, name } = useGame();
   const { t } = useI18n();
   const hand = room.game?.hand;
   return (
     <div className="panel">
-      <div className="panel-title">{hand && hand.toAct !== null ? t('game.toAct', { name: name(hand.toAct) }) : t('common.loading')}</div>
-    </div>
-  );
-}
-
-/** Host confirms physical cards were dealt before the next betting round. */
-export function StreetPanel() {
-  const { room, isHost, send, canSend } = useGame();
-  const { t } = useI18n();
-  const hand = room.game!.hand!;
-  const msg = hand.bettingClosed
-    ? t('street.runout')
-    : hand.street === 'preflop'
-      ? t('street.dealFlop')
-      : hand.street === 'flop'
-        ? t('street.dealTurn')
-        : t('street.dealRiver');
-  if (!isHost) {
-    return (
-      <div className="panel">
-        <div className="panel-title">{t('street.waitHost')}</div>
-        <p className="muted small">{msg}</p>
-      </div>
-    );
-  }
-  return (
-    <div className="panel">
-      <p className="lead">{msg}</p>
-      <button className="btn btn-gold btn-big btn-block" disabled={!canSend} onClick={() => send({ type: 'host:advance' })}>
-        {hand.bettingClosed ? t('street.toShowdown') : t('street.confirm')}
-      </button>
+      <div className="panel-title">{hand ? waitingTitle(hand, name, t) : t('common.loading')}</div>
     </div>
   );
 }
 
 /**
- * Showdown. Players reveal their real cards; anyone still in a pot can press
- * "I won!" (or withdraw it) or "I lost / muck". Claims never move chips: the
- * host confirms the winner(s) of every pot and the engine pays out.
+ * No more betting: deal whatever is left of the board and reveal the hands.
+ * The host's one confirmation opens the showdown (declarations, settlement).
+ */
+export function RevealPanel() {
+  const { room, isHost, send, canSend } = useGame();
+  const { t } = useI18n();
+  const hand = room.game!.hand!;
+  // Betting ended on the river: the board is complete. Otherwise cards are still to come.
+  const msg = hand.street === 'river' ? t('reveal.reveal') : t('reveal.runout');
+  return (
+    <div className="panel">
+      <p className="lead" role="status">
+        {msg}
+      </p>
+      {isHost ? (
+        <button className="btn btn-gold btn-big btn-block" disabled={!canSend} onClick={() => send({ type: 'host:showdown' })}>
+          {t('reveal.begin')}
+        </button>
+      ) : (
+        <p className="muted small">{t('reveal.waitHost')}</p>
+      )}
+    </div>
+  );
+}
+
+/** Whole seconds left until a server deadline; the server decides, this is only a display. */
+export function useServerCountdown(deadline: number | null, serverTime: number): number | null {
+  // Offset between the server clock and this device, measured when the state arrived.
+  const offset = useMemo(() => serverTime - Date.now(), [serverTime]);
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (deadline === null) return;
+    const id = setInterval(() => force((x) => x + 1), 250);
+    return () => clearInterval(id);
+  }, [deadline]);
+  if (deadline === null) return null;
+  return Math.max(0, Math.ceil((deadline - (Date.now() + offset)) / 1000));
+}
+
+/**
+ * Showdown. Every player still contesting a pot (all-in players included)
+ * declares Win, Tie or Fold (Fold gives up the pot; chips stay in it). With a
+ * single pot, one Win and nothing else, the others fold automatically after a
+ * short countdown unless they select Win or Tie; any conflict hands the
+ * decision to the host for the rest of the showdown. The host can always
+ * settle each pot (ties split by the engine).
  */
 export function ShowdownPanel() {
   const { room, isHost, local, mySeat, send, canSend, name } = useGame();
   const { t, n } = useI18n();
-  const [mucking, setMucking] = useState(false);
+  const [folding, setFolding] = useState<number | null>(null);
+  const hand = room.game!.hand!;
   const pots = room.pots;
-  const claims = room.claims;
+  const sd = room.showdown;
+  const decl = useMemo(() => sd?.declarations ?? {}, [sd]);
+  const contenders = useMemo(() => [...new Set(pots.flatMap((p) => p.eligible))].sort((a, b) => a - b), [pots]);
+  const seconds = useServerCountdown(sd?.deadline ?? null, room.serverTime);
+  const counting = sd?.deadline != null && sd.claimant !== null;
+
   const suggestion = useCallback(
     () =>
       pots.map((p) => {
         if (p.eligible.length === 1) return [...p.eligible];
-        const claimed = p.eligible.filter((s) => claims.includes(s));
-        return claimed.length === 1 ? claimed : [];
+        const wins = p.eligible.filter((s) => decl[s] === 'win');
+        if (wins.length === 1) return wins;
+        const ties = p.eligible.filter((s) => decl[s] === 'tie');
+        return wins.length === 0 && ties.length > 1 ? ties : [];
       }),
-    [pots, claims],
+    [pots, decl],
   );
-  const key = JSON.stringify([pots, claims]);
+  const key = JSON.stringify([pots, decl]);
   const [sel, setSel] = useState<number[][]>(suggestion);
   useEffect(() => setSel(suggestion()), [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const ready = useMemo(() => sel.length === pots.length && sel.every((s) => s.length > 0), [sel, pots.length]);
-
-  const contesting = !local && mySeat !== null && pots.some((p) => p.eligible.includes(mySeat));
-  const claimed = mySeat !== null && claims.includes(mySeat);
   const potName = (i: number) => (i === 0 ? t('game.mainPot') : t('game.sidePot', { n: i }));
 
-  const toggle = (i: number, seat: number) =>
-    setSel((cur) => {
-      const next = cur.map((x) => [...x]);
-      const has = next[i].includes(seat);
-      next[i] = has ? next[i].filter((s) => s !== seat) : [...next[i], seat].sort((a, b) => a - b);
-      // Convenience: a winner of a larger pot also preselects smaller side pots they are eligible for.
-      if (!has) for (let j = i + 1; j < pots.length; j++) if (next[j].length === 0 && pots[j].eligible.includes(seat)) next[j] = [seat];
-      return next;
-    });
+  const declare = (seat: number, declaration: 'win' | 'tie' | 'fold' | null) =>
+    send({ type: 'declare', declaration, hand: hand.number, ...(local ? { seat } : {}) });
 
+  const status = counting
+    ? t('showdown.countdown', { name: name(sd!.claimant!), seconds: seconds ?? 0 })
+    : sd?.manual
+      ? sd.sidePots
+        ? t('showdown.sidePots')
+        : t('showdown.manual')
+      : t('showdown.declare');
+
+  const badge = (seat: number) =>
+    decl[seat] ? <span className={`claim-badge decl-${decl[seat]}`}>{decl[seat] === 'win' ? t('showdown.win') : t('showdown.tie')}</span> : null;
+
+  /** Win / Tie / Fold for one seat (the viewer online; any contender in Local Mode). */
+  const choices = (seat: number) => {
+    const cur = decl[seat] ?? null;
+    const mine = counting && sd!.claimant !== seat;
+    const timerId = `decl-timer-${seat}`;
+    return (
+      <div key={seat} className="decl-block">
+        {local && (
+          <div className="decl-name">
+            <span className="seat-no">{seat}</span> {name(seat)}
+          </div>
+        )}
+        <div className="decl-row" role="group" aria-label={local ? t('showdown.choiceFor', { name: name(seat) }) : t('showdown.yourChoice')}>
+          <button className={`btn btn-decl ${cur === 'win' ? 'on' : ''}`} aria-pressed={cur === 'win'} disabled={!canSend} onClick={() => void declare(seat, cur === 'win' ? null : 'win')}>
+            {t('showdown.win')}
+          </button>
+          <button className={`btn btn-decl ${cur === 'tie' ? 'on' : ''}`} aria-pressed={cur === 'tie'} disabled={!canSend} onClick={() => void declare(seat, cur === 'tie' ? null : 'tie')}>
+            {t('showdown.tie')}
+          </button>
+          <button
+            className={`btn btn-decl btn-danger ${mine ? 'counting' : ''}`}
+            disabled={!canSend}
+            aria-describedby={mine ? timerId : undefined}
+            // While the countdown runs Fold applies at once (it would happen anyway); otherwise confirm first.
+            onClick={() => (mine ? void declare(seat, 'fold') : setFolding(seat))}
+          >
+            {t('showdown.fold')}
+            {mine && seconds !== null && (
+              <span className="decl-count" aria-hidden="true">
+                {seconds}s
+              </span>
+            )}
+          </button>
+        </div>
+        {mine && (
+          <p className="decl-warn" id={timerId} role="timer">
+            {t('showdown.autoFoldIn', { seconds: seconds ?? 0 })}
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const myControls = !local && mySeat !== null && contenders.includes(mySeat);
   return (
     <div className="panel">
       <div className="panel-title">{t('showdown.title')}</div>
-      <p className="muted small">{isHost ? `${t('showdown.select')} ${t('showdown.tieHint')}` : t('showdown.reveal')}</p>
+      <p className={`showdown-status ${sd?.manual ? 'manual' : ''}`} role="status">
+        {status}
+      </p>
       {pots.map((p, i) => (
         <div key={i} className="pot-select">
           <div className="pot-select-head">
@@ -178,52 +254,56 @@ export function ShowdownPanel() {
             <b>{n(p.amount)}</b>
           </div>
           <div className="chip-row">
-            {p.eligible.map((seat) => {
-              const badge = claims.includes(seat) ? <span className="claim-badge">⚑ {t('showdown.claimed')}</span> : null;
-              return isHost ? (
-                <button key={seat} className={`chip-btn ${sel[i]?.includes(seat) ? 'on' : ''}`} aria-pressed={sel[i]?.includes(seat)} onClick={() => toggle(i, seat)}>
-                  <span className="seat-no">{seat}</span> {name(seat)} {badge}
+            {p.eligible.map((seat) =>
+              isHost ? (
+                <button
+                  key={seat}
+                  className={`chip-btn ${sel[i]?.includes(seat) ? 'on' : ''}`}
+                  aria-pressed={sel[i]?.includes(seat)}
+                  onClick={() =>
+                    setSel((cur) => {
+                      const next = cur.map((x) => [...x]);
+                      const has = next[i].includes(seat);
+                      next[i] = has ? next[i].filter((s) => s !== seat) : [...next[i], seat].sort((a, b) => a - b);
+                      // Convenience: a winner of a larger pot also preselects smaller side pots they are eligible for.
+                      if (!has) for (let j = i + 1; j < pots.length; j++) if (next[j].length === 0 && pots[j].eligible.includes(seat)) next[j] = [seat];
+                      return next;
+                    })
+                  }
+                >
+                  <span className="seat-no">{seat}</span> {name(seat)} {badge(seat)}
                 </button>
               ) : (
-                <span key={seat} className={`chip-btn static ${claims.includes(seat) ? 'on' : ''}`}>
-                  <span className="seat-no">{seat}</span> {name(seat)} {badge}
+                <span key={seat} className={`chip-btn static ${decl[seat] ? 'on' : ''}`}>
+                  <span className="seat-no">{seat}</span> {name(seat)} {badge(seat)}
                 </span>
-              );
-            })}
+              ),
+            )}
           </div>
         </div>
       ))}
-      {contesting && (
-        <div className="row gap-s">
-          <button
-            className={`btn btn-block ${claimed ? '' : 'btn-gold'}`}
-            disabled={!canSend}
-            aria-pressed={claimed}
-            onClick={() => send({ type: 'claim', won: !claimed })}
-          >
-            {claimed ? t('showdown.withdraw') : t('showdown.iWon')}
-          </button>
-          <button className="btn btn-block btn-danger" disabled={!canSend} onClick={() => setMucking(true)}>
-            {t('showdown.iLost')}
-          </button>
-        </div>
-      )}
+      {myControls && choices(mySeat!)}
+      {local && <div className="decl-list">{contenders.map((seat) => choices(seat))}</div>}
       {isHost ? (
-        <button className="btn btn-gold btn-big btn-block" disabled={!ready || !canSend} onClick={() => send({ type: 'host:award', winners: sel })}>
-          {ready ? t('showdown.award') : t('showdown.noWinner')}
-        </button>
+        <>
+          <p className="muted small">{`${t('showdown.select')} ${t('showdown.tieHint')}`}</p>
+          <button className="btn btn-gold btn-big btn-block" disabled={!ready || !canSend} onClick={() => send({ type: 'host:award', winners: sel })}>
+            {ready ? t('showdown.award') : t('showdown.noWinner')}
+          </button>
+        </>
       ) : (
-        <p className="muted small">{t('showdown.waitHost')}</p>
+        sd?.manual && <p className="muted small">{t('showdown.waitHost')}</p>
       )}
-      {mucking && (
+      {folding !== null && (
         <Confirm
-          title={t('showdown.iLost')}
-          message={t('showdown.muckConfirm')}
+          title={t('showdown.fold')}
+          message={t('showdown.foldConfirm')}
           danger
-          onCancel={() => setMucking(false)}
+          onCancel={() => setFolding(null)}
           onConfirm={async () => {
-            setMucking(false);
-            await send({ type: 'muck' });
+            const seat = folding;
+            setFolding(null);
+            await declare(seat, 'fold');
           }}
         />
       )}

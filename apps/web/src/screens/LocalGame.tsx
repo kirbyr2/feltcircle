@@ -21,6 +21,7 @@ export function localStore() {
 }
 
 export function setLocalSession(s: RoomState) {
+  current?.dispose();
   current = new LocalSession(s, localStore());
 }
 
@@ -37,6 +38,7 @@ export function LocalGame({ onChanged }: { onChanged: () => void }) {
     if (session) return;
     void kvGet<RoomState>(LOCAL_KEY).then((s) => {
       if (s && s.schema === 1) {
+        current?.dispose();
         current = new LocalSession(s, localStore());
         setSession(current);
       } else setMissing(true);
@@ -53,6 +55,7 @@ export function LocalGame({ onChanged }: { onChanged: () => void }) {
   if (!session) return <Spinner label={t('common.loading')} />;
   const discard = async () => {
     await kvDel(LOCAL_KEY);
+    current?.dispose();
     current = null;
     onChanged();
     navigate('', true);
@@ -72,6 +75,7 @@ export function LocalGame({ onChanged }: { onChanged: () => void }) {
             }}
             onStart={async (s) => {
               await kvSet(LOCAL_KEY, s);
+              current?.dispose();
               current = new LocalSession(s, localStore());
               setSession(current);
               onChanged();

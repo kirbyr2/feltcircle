@@ -2,13 +2,19 @@
 export type Street = 'preflop' | 'flop' | 'turn' | 'river';
 
 /**
- * Hand phases:
- * - betting:          a player must act (`toAct`)
- * - street-complete:  betting round finished; waiting for the host to confirm the next cards were dealt
- * - showdown:         waiting for the host to select winners for each pot
- * - complete:         chips distributed; waiting for the next hand
+ * Hand phases (cards are physical; nobody confirms dealing between streets):
+ * - betting:   a player must act (`toAct`). When a round ends before the river
+ *              and two or more players can still bet, the next street starts at
+ *              once; players deal its cards before the first player acts.
+ * - reveal:    no more betting: river betting finished, or betting is closed
+ *              (fewer than two players can bet) and the board must be run out.
+ *              Waiting for the host to confirm that all cards are dealt and
+ *              hands revealed.
+ * - showdown:  players declare Win / Tie / Fold; the host settles each pot
+ *              (or one sole Win claimant takes an undisputed single pot).
+ * - complete:  chips distributed; waiting for the next hand.
  */
-export type HandPhase = 'betting' | 'street-complete' | 'showdown' | 'complete';
+export type HandPhase = 'betting' | 'reveal' | 'showdown' | 'complete';
 
 /** `fixed`: blinds never change automatically (the host may still change them between hands). */
 export type BlindProgression = 'time' | 'players' | 'hybrid' | 'fixed';
@@ -55,7 +61,7 @@ export interface HandSeat {
   acted: boolean;
   /** The current bet level right after this player's last voluntary action (for action-reopening rules). */
   actedLevel: number;
-  /** Gave up the pot at showdown ("I lost / muck"). Also marked as folded. */
+  /** Folded at showdown (gave up the right to win; chips stay in the pot). Also marked as folded. */
   mucked?: boolean;
 }
 

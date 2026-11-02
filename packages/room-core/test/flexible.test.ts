@@ -36,11 +36,11 @@ function onlineRoom(n: number, settings = {}): RoomState {
 }
 const act = (type: 'fold' | 'check' | 'call' | 'allin'): Command => ({ type: 'act', action: { type } });
 
-/** Play the current hand to showdown by calling/checking. */
+/** Play the current hand to showdown by calling/checking; the host then confirms the showdown. */
 function toShowdown(s: RoomState): RoomState {
   for (let i = 0; i < 50 && s.game!.hand!.phase !== 'showdown'; i++) {
     const h = s.game!.hand!;
-    if (h.phase === 'street-complete') s = ok(s, s.hostSeat, { type: 'host:advance' });
+    if (h.phase === 'reveal') s = ok(s, s.hostSeat, { type: 'host:showdown' });
     else {
       const me = h.seats.find((x) => x.seat === h.toAct)!;
       s = ok(s, h.toAct, act(me.bet < h.currentBet ? 'call' : 'check'));
@@ -59,14 +59,16 @@ describe('game catalog', () => {
     expect(toView(onlineRoom(1), 1, now).gameType).toBe('texas-holdem');
   });
 
-  it('upgrades rooms stored before late joins and claims existed', () => {
-    const legacy = onlineRoom(2) as Partial<RoomState>;
+  it('upgrades rooms stored before late joins and showdown declarations existed', () => {
+    const legacy = onlineRoom(2) as Partial<RoomState> & { claims?: number[] };
     delete legacy.requests;
-    delete legacy.claims;
+    delete legacy.showdown;
+    legacy.claims = [];
     delete legacy.gameType;
     const s = normalizeRoom(legacy as RoomState);
     expect(s.requests).toEqual({});
-    expect(s.claims).toEqual([]);
+    expect(s.showdown).toBe(null);
+    expect('claims' in s).toBe(false);
     expect(s.gameType).toBe('texas-holdem');
   });
 });
@@ -171,14 +173,13 @@ describe('showdown victory claims', () => {
     s = ok(s, 1, act('allin'));
     s = ok(s, 2, act('call'));
     s = ok(s, 3, act('call'));
-    s = ok(s, 1, { type: 'host:advance' });
-    // Flop: 2 bets 200, 3 calls → side pot between 2 and 3.
+    // Flop (starts at once): 2 bets 200, 3 calls → side pot between 2 and 3.
     s = ok(s, 2, { type: 'act', action: { type: 'bet', amount: 200 } });
     s = ok(s, 3, act('call'));
     return toShowdown(s);
   }
 
-  it('eligible players claim and withdraw; claims never move chips; host settles per pot', () => {
+  it('side pots: declarations never move chips and never settle automatically; host settles per pot', () => {
     let s = sidePotShowdown();
     const pots = toView(s, 1, now).pots;
     expect(pots.length).toBe(2);
@@ -186,37 +187,38 @@ describe('showdown victory claims', () => {
 
     const chipsBefore = { ...s.game!.chips };
     const handBefore = structuredClone(s.game!.hand);
-    s = ok(s, 2, { type: 'claim', won: true });
-    s = ok(s, 3, { type: 'claim', won: true });
-    expect(toView(s, 3, now).claims).toEqual([2, 3]);
+    s = ok(s, 2, { type: 'declare', declaration: 'win' });
+    // A single Win with side pots: host judgment, no countdown.
+    expect(toView(s, 3, now).showdown).toMatchObject({ declarations: { 2: 'win' }, manual: true, sidePots: true, deadline: null });
+    s = ok(s, 3, { type: 'declare', declaration: 'win' });
+    expect(toView(s, 3, now).showdown!.declarations).toEqual({ 2: 'win', 3: 'win' });
     expect(s.game!.chips).toEqual(chipsBefore);
     expect(s.game!.hand).toEqual(handBefore);
-    s = ok(s, 3, { type: 'claim', won: false });
-    expect(s.claims).toEqual([2]);
-    expect(cmd(s, 2, { type: 'claim', won: true, seat: 3 }).error).toBe('NOT_ALLOWED'); // only your own seat online
+    s = ok(s, 3, { type: 'declare', declaration: null });
+    expect(s.showdown!.declarations).toEqual({ 2: 'win' });
+    expect(cmd(s, 2, { type: 'declare', declaration: 'win', seat: 3 }).error).toBe('NOT_ALLOWED'); // only your own seat online
 
     s = ok(s, 1, { type: 'host:award', winners: [[2], [2]] });
-    expect(s.claims).toEqual([]);
+    expect(s.showdown).toBe(null);
     expect(s.game!.hand!.phase).toBe('complete');
   });
 
-  it('claims are only possible at showdown for players still in the pot', () => {
+  it('declarations are only possible at showdown for players still in the pot', () => {
     let s = ok(onlineRoom(3), 1, { type: 'host:start' });
-    expect(cmd(s, 2, { type: 'claim', won: true }).error).toBe('WRONG_PHASE');
+    expect(cmd(s, 2, { type: 'declare', declaration: 'win' }).error).toBe('WRONG_PHASE');
     s = ok(s, s.game!.hand!.toAct, act('fold'));
     const folded = s.game!.hand!.seats.find((x) => x.folded)!.seat;
     s = toShowdown(s);
-    expect(cmd(s, folded, { type: 'claim', won: true }).error).toBe('NOT_ELIGIBLE');
+    expect(cmd(s, folded, { type: 'declare', declaration: 'win' }).error).toBe('NOT_ELIGIBLE');
   });
 
-  it('"I lost / muck" removes a player from every pot and settles when one contender is left', () => {
+  it('Fold at showdown removes a player from every pot and settles when one contender is left', () => {
     let s = ok(onlineRoom(2), 1, { type: 'host:start' });
     s = toShowdown(s);
-    s = ok(s, 2, { type: 'claim', won: true });
-    s = ok(s, 1, { type: 'muck' });
+    s = ok(s, 1, { type: 'declare', declaration: 'fold' });
     expect(s.game!.hand!.phase).toBe('complete');
     expect(s.game!.chips).toEqual({ 1: 1980, 2: 2020 });
-    expect(s.claims).toEqual([]);
-    expect(s.log.some((e) => e.code === 'mucked' && e.seat === 1)).toBe(true);
+    expect(s.showdown).toBe(null);
+    expect(s.log.some((e) => e.code === 'showdownFold' && e.seat === 1)).toBe(true);
   });
 });

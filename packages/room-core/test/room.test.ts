@@ -188,7 +188,7 @@ describe('pre-actions', () => {
     s = ok(s, 3, { type: 'setPreAction', preAction: 'callany' });
     s = ok(s, 1, { type: 'act', action: { type: 'call' } });
     s = ok(s, 2, { type: 'act', action: { type: 'call' } });
-    expect(s.game!.hand!.phase).toBe('street-complete');
+    expect(s.game!.hand!.street).toBe('flop');
     expect(s.game!.hand!.log.at(-1)).toMatchObject({ seat: 3, type: 'check', auto: true });
   });
 
@@ -272,10 +272,11 @@ describe('undo, pause and showdown flow', () => {
     s = ok(s, 1, { type: 'act', action: { type: 'call' } });
     s = ok(s, 2, { type: 'act', action: { type: 'call' } });
     s = ok(s, 3, { type: 'act', action: { type: 'check' } });
-    for (let i = 0; i < 3; i++) {
-      s = ok(s, 1, { type: 'host:advance' });
-      for (const seat of [2, 3, 1]) s = ok(s, seat, { type: 'act', action: { type: 'check' } });
-    }
+    // Flop, turn and river follow without any host click.
+    for (let i = 0; i < 3; i++) for (const seat of [2, 3, 1]) s = ok(s, seat, { type: 'act', action: { type: 'check' } });
+    expect(s.game!.hand!.phase).toBe('reveal');
+    expect(cmd(s, 1, { type: 'host:award', winners: [[3]] }).error).toBe('WRONG_PHASE'); // not before the confirmation
+    s = ok(s, 1, { type: 'host:showdown' });
     expect(s.game!.hand!.phase).toBe('showdown');
     expect(toView(s, 1, now).pots).toEqual([{ amount: 60, eligible: [1, 2, 3] }]);
     expect(cmd(s, 2, { type: 'host:award', winners: [[3]] }).error).toBe('NOT_HOST');
@@ -342,7 +343,7 @@ describe('local mode', () => {
     expect(cmd(s, null, { type: 'act', seat: 2, action: { type: 'call' } }, { local: true }).error).toBe('NOT_YOUR_TURN');
     s = ok(s, null, { type: 'act', seat: 1, action: { type: 'call' } }, true);
     s = ok(s, null, { type: 'act', seat: 2, action: { type: 'check' } }, true);
-    expect(s.game!.hand!.phase).toBe('street-complete');
+    expect(s.game!.hand!.street).toBe('flop');
     expect(nextWakeAt(s)).toBe(null);
   });
 

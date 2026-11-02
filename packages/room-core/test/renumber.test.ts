@@ -96,7 +96,7 @@ describe('renumbering when the game starts', () => {
     s = ok(s, 3, { type: 'act', action: { type: 'call' } });
     s = ok(s, 4, { type: 'act', action: { type: 'call' } });
     s = ok(s, 1, { type: 'act', action: { type: 'check' } });
-    expect(s.game!.hand!.phase).toBe('street-complete');
+    expect(s.game!.hand!.street).toBe('flop'); // the flop starts right away
     expect(s.game!.hand!.log.map((e) => e.seat)).toEqual([4, 1, 2, 3, 4, 1]);
   });
 

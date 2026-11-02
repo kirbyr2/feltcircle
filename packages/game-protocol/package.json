@@ -1,13 +1,13 @@
 {
   "name": "@feltcircle/game-protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "license": "MIT",
   "description": "Shared JSON protocol, commands and validation for FeltCircle clients and servers.",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@feltcircle/poker-engine": "0.1.0",
-    "@feltcircle/chip-export": "0.1.0"
+    "@feltcircle/poker-engine": "0.1.1",
+    "@feltcircle/chip-export": "0.1.1"
   }
 }

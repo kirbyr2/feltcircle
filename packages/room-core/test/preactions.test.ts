@@ -60,7 +60,7 @@ describe('pre-actions when checking is legal (amount owed = 0)', () => {
     s = ok(s, 1, call);
     s = ok(s, 2, call);
     expect(lastLog(s)).toMatchObject({ seat: 3, type: 'check', auto: true });
-    expect(s.game!.hand!.phase).toBe('street-complete');
+    expect(s.game!.hand!.street).toBe('flop'); // the flop started right away
     expect(s.preActions).toEqual({});
     expect(s.game!.hand!.log.filter((e) => e.seat === 3 && e.auto)).toHaveLength(1);
   });
@@ -153,22 +153,20 @@ describe('selection lifecycle', () => {
     s = ok(s, 1, call);
     s = ok(s, 2, call);
     expect(s.preActions).toEqual({});
-    s = ok(s, 1, { type: 'host:advance' });
-    // Flop: seat 2 acts first, then 3, who has nothing selected any more.
+    // Flop (started automatically): seat 2 acts first, then 3, who has nothing selected any more.
     s = ok(s, 2, { type: 'act', action: { type: 'bet', amount: 40 } });
     expect(s.game!.hand!.toAct).toBe(3);
     expect(seat(s, 3).bet).toBe(0);
   });
 
-  it('is kept between streets and runs on the next street', () => {
+  it('can be chosen at the start of the next street and runs there', () => {
     let s = ok(started(), 1, call);
     s = ok(s, 2, call);
     s = ok(s, 3, { type: 'act', action: { type: 'check' } });
-    expect(s.game!.hand!.phase).toBe('street-complete');
-    // Nothing is owed on the coming street: Check is on offer, Fold is not.
-    expect(cmd(s, 2, pre('fold')).error).toBe('PRE_ACTION_UNAVAILABLE');
+    expect(s.game!.hand!).toMatchObject({ phase: 'betting', street: 'flop', toAct: 2 });
+    // Nothing is owed on the new street: Check is on offer, Fold is not.
+    expect(cmd(s, 1, pre('fold')).error).toBe('PRE_ACTION_UNAVAILABLE');
     s = ok(s, 3, pre('check'));
-    s = ok(s, 1, { type: 'host:advance' });
     s = ok(s, 2, { type: 'act', action: { type: 'check' } });
     expect(lastLog(s)).toMatchObject({ seat: 3, type: 'check', auto: true });
   });

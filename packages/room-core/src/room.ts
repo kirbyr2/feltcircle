@@ -1,5 +1,5 @@
 import {
-  advanceStreet,
+  beginShowdown,
   applyAction,
   awardPots,
   createTournament,
@@ -12,6 +12,7 @@ import {
   liveSeats,
   msUntilNextLevel,
   muck,
+  normalizeTournament,
   owedForPreAction,
   preActionChoices,
   resolvePreAction,
@@ -30,6 +31,7 @@ import {
 import { resolveImport, type ImportResolution, type SeatChips } from '@feltcircle/chip-export';
 import {
   AUTO_FOLD_AFTER_MS,
+  SHOWDOWN_FOLD_MS,
   DEFAULT_GAME,
   DEFAULT_SETTINGS,
   MAX_PLAYERS,
@@ -38,6 +40,7 @@ import {
   type Command,
   type ErrorCode,
   type GameId,
+  type Declaration,
   type PreAction,
   type PreActionNotice,
   type RoomLogEntry,
@@ -46,6 +49,7 @@ import {
   type RoomStatus,
   type RoomSummary,
   type RoomView,
+  type ShowdownView,
 } from '@feltcircle/game-protocol';
 
 export interface SeatRecord {
@@ -103,24 +107,54 @@ export interface RoomState {
   undo: TournamentState[];
   pendingImport: PendingImport | null;
   requests: Record<number, JoinRequest>;
-  /** Seats claiming "I won!" in the current showdown. */
-  claims: number[];
+  /** Declarations and the automatic-fold countdown of the current showdown (null otherwise). */
+  showdown: ShowdownState | null;
   log: RoomLogEntry[];
   recent: RecentCommand[];
+}
+
+/**
+ * Showdown bookkeeping, persisted with the room so the countdown survives
+ * reconnects, restarts and Durable Object hibernation.
+ */
+export interface ShowdownState {
+  /** Hand number this record belongs to. */
+  hand: number;
+  declarations: Record<number, Declaration>;
+  /** Host judgment required for the rest of this showdown; never switches back. */
+  manual: boolean;
+  /** Sole Win claimant while the automatic-fold countdown runs. */
+  claimant: number | null;
+  /** Server time at which the other contenders are folded (null: no countdown). */
+  deadline: number | null;
 }
 
 const MAX_REQUESTS = MAX_PLAYERS;
 
 /** Fill fields added after a room was first stored (rooms persisted by an older version). */
 export function normalizeRoom(state: RoomState): RoomState {
-  const s = state as RoomState & Partial<Pick<RoomState, 'gameType' | 'requests' | 'claims' | 'preActionNotices'>>;
-  if (s.gameType && s.requests && s.claims && s.preActionNotices) return state;
+  const s = state as RoomState & Partial<Pick<RoomState, 'gameType' | 'requests' | 'preActionNotices' | 'showdown'>> & { claims?: number[] };
+  const game = s.game ? normalizeTournament(s.game) : s.game;
+  const undo = (s.undo ?? []).map(normalizeTournament);
+  const current = s.gameType && s.requests && s.preActionNotices && s.showdown !== undefined && !('claims' in s) && game === s.game && undo.every((u, i) => u === s.undo[i]);
+  if (current) return state;
+  const { claims, ...rest } = s;
+  const h = game?.hand;
+  let showdown = s.showdown ?? null;
+  if (showdown === null && h && h.phase === 'showdown') {
+    // Stored by a version with "I won!" claims: keep them as Win declarations, settled by the host.
+    const declarations: Record<number, Declaration> = {};
+    for (const seat of claims ?? []) declarations[seat] = 'win';
+    showdown = { hand: h.number, declarations, manual: true, claimant: null, deadline: null };
+  }
   return {
-    ...state,
+    ...rest,
+    game,
+    undo,
     gameType: s.gameType ?? DEFAULT_GAME,
     requests: s.requests ?? {},
-    claims: s.claims ?? [],
     preActionNotices: s.preActionNotices ?? {},
+    showdown,
   };
 }
 
@@ -225,7 +259,7 @@ function baseRoom(id: string, mode: RoomMode, settings: RoomSettings, now: numbe
     undo: [],
     pendingImport: null,
     requests: {},
-    claims: [],
+    showdown: null,
     log: [],
     recent: [],
   };
@@ -349,14 +383,12 @@ export function reconcileConnections(state0: RoomState, live: Record<number, num
   return state;
 }
 
-/** Next time `tick` needs to run (auto-fold deadlines, expiry). */
+/** Next time `tick` needs to run online (auto-fold and showdown deadlines, expiry). */
 export function nextWakeAt(state: RoomState): number | null {
   if (state.mode !== 'online') return null;
-  let at = expiresAt(state)!;
-  for (const s of Object.values(state.seats)) {
-    if (s.connections === 0 && s.offlineSince !== null && !s.autoFold) at = Math.min(at, s.offlineSince + AUTO_FOLD_AFTER_MS);
-  }
-  return at;
+  const timer = nextTimerAt(state);
+  const expiry = expiresAt(state)!;
+  return timer === null ? expiry : Math.min(expiry, timer);
 }
 
 export interface TickResult {
@@ -365,24 +397,45 @@ export interface TickResult {
   expired: boolean;
 }
 
-/** Server-side timers: enable Auto-Fold for players disconnected ≥ 30 s and run automatic actions. */
+/**
+ * Timers (server-side online, on the device in Local Mode): enable Auto-Fold
+ * for players disconnected ≥ 30 s, fold showdown opponents whose countdown
+ * expired, and run the automatic actions that follow.
+ */
 export function tick(state0: RoomState, now: number): TickResult {
   if (isExpired(state0, now)) return { state: state0, changed: false, expired: true };
-  if (state0.mode !== 'online') return { state: state0, changed: false, expired: false };
   const state = clone(state0);
   let changed = false;
-  for (const s of Object.values(state.seats)) {
-    if (s.connections === 0 && s.offlineSince !== null && !s.autoFold && now - s.offlineSince >= AUTO_FOLD_AFTER_MS) {
-      s.autoFold = true;
-      dropPreAction(state, s.seat);
-      log(state, now, s.seat, 'autoFoldOn');
-      changed = true;
+  if (state.mode === 'online') {
+    for (const s of Object.values(state.seats)) {
+      if (s.connections === 0 && s.offlineSince !== null && !s.autoFold && now - s.offlineSince >= AUTO_FOLD_AFTER_MS) {
+        s.autoFold = true;
+        dropPreAction(state, s.seat);
+        log(state, now, s.seat, 'autoFoldOn');
+        changed = true;
+      }
     }
   }
+  if (expireShowdown(state, now)) changed = true;
   if (!changed) return { state: state0, changed: false, expired: false };
   runAutomation(state, now);
+  syncShowdown(state, now);
   state.version++;
   return { state, changed: true, expired: false };
+}
+
+/** Earliest pending game timer (disconnect auto-fold, showdown countdown), ignoring room expiry. */
+export function nextTimerAt(state: RoomState): number | null {
+  let at: number | null = state.showdown?.deadline ?? null;
+  if (state.mode === 'online') {
+    for (const s of Object.values(state.seats)) {
+      if (s.connections === 0 && s.offlineSince !== null && !s.autoFold) {
+        const due = s.offlineSince + AUTO_FOLD_AFTER_MS;
+        at = at === null ? due : Math.min(at, due);
+      }
+    }
+  }
+  return at;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,9 +475,12 @@ export function applyCommand(state0: RoomState, actor: Actor, cmd: Command, now:
   let deleted = false;
   const out: ExecuteOutput = {};
   try {
+    // Deadline boundary: at or after the showdown deadline the automatic folds
+    // happen first, so a declaration only counts when it arrives before it.
+    if (expireShowdown(state, now)) runAutomation(state, now);
     deleted = execute(state, actor, cmd, now, out) === 'deleted';
     runAutomation(state, now);
-    syncClaims(state);
+    syncShowdown(state, now);
   } catch (e) {
     if (!(e instanceof RoomError || e instanceof EngineError)) throw e;
     return { state: state0, ok: false, error: errorCode(e) };
@@ -491,7 +547,7 @@ function applySeatMap(state: RoomState, map: Record<number, number>) {
   for (const [k, v] of Object.entries(state.preActions)) if (has(Number(k))) preActions[map[Number(k)]] = v;
   state.preActions = preActions;
   state.preActionNotices = {}; // the game is only starting: nothing can have been cancelled yet
-  state.claims = state.claims.filter(has).map((seat) => map[seat]);
+  state.showdown = null; // only the waiting room is renumbered: no showdown can exist yet
   // `requests` needs no mapping: late-join requests cannot exist in the waiting
   // room (requestSeat refuses there and host:newGame turns them into seats).
   // Idempotency keys are "<seat>:<commandId>"; keep them attached to the same player.
@@ -570,15 +626,74 @@ function configFromSettings(s: RoomSettings, players: number): TournamentConfig 
   });
 }
 
-/** Claims only exist during a showdown and only for players still contesting a pot. */
-function syncClaims(state: RoomState) {
+/** Players still contesting a pot at showdown (not folded/mucked; all-in players included). */
+export function showdownContenders(state: RoomState): number[] {
+  const h = state.game?.hand;
+  if (!h || h.phase !== 'showdown') return [];
+  return [...new Set(currentPots(h).flatMap((p) => p.eligible))].sort((a, b) => a - b);
+}
+
+/**
+ * Keep the showdown record consistent with the hand and apply the automatic
+ * settlement rules (single pot only):
+ * - exactly one Win and no Tie, and no earlier conflict → countdown for the
+ *   other contenders;
+ * - a second Win, any Tie, the claimant withdrawing or folding, side pots or a
+ *   pause → host judgment for the rest of this showdown (`manual` latches; the
+ *   countdown is cancelled and never restarted).
+ * Cleared whenever the hand is not in its showdown.
+ */
+function syncShowdown(state: RoomState, now: number) {
   const h = state.game?.hand;
   if (!h || h.phase !== 'showdown') {
-    state.claims = [];
+    state.showdown = null;
     return;
   }
-  const contesting = new Set(currentPots(h).flatMap((p) => p.eligible));
-  state.claims = state.claims.filter((s) => contesting.has(s));
+  let sd = state.showdown;
+  if (!sd || sd.hand !== h.number) sd = state.showdown = { hand: h.number, declarations: {}, manual: false, claimant: null, deadline: null };
+  const live = showdownContenders(state);
+  for (const k of Object.keys(sd.declarations)) if (!live.includes(Number(k))) delete sd.declarations[Number(k)];
+  const wins = live.filter((seat) => sd.declarations[seat] === 'win');
+  const ties = live.filter((seat) => sd.declarations[seat] === 'tie');
+  if (currentPots(h).length > 1 || wins.length > 1 || ties.length > 0) sd.manual = true;
+  if (sd.deadline !== null && (sd.manual || state.paused || wins.length !== 1 || wins[0] !== sd.claimant)) {
+    sd.manual = true;
+    sd.deadline = null;
+    sd.claimant = null;
+  }
+  if (sd.deadline === null && !sd.manual && !state.paused && wins.length === 1 && live.length > 1) {
+    sd.claimant = wins[0];
+    sd.deadline = now + SHOWDOWN_FOLD_MS;
+  }
+}
+
+/**
+ * The countdown expired: fold every other contender (they did not select Win
+ * or Tie in time) so the sole claimant takes the pot. Runs at most once per
+ * showdown: the deadline is cleared and the hand completes, so a racing timer
+ * or a repeated message finds nothing to do.
+ */
+function expireShowdown(state: RoomState, now: number): boolean {
+  const sd = state.showdown;
+  const h = state.game?.hand;
+  if (!sd || sd.deadline === null || now < sd.deadline) return false;
+  const claimant = sd.claimant;
+  sd.deadline = null;
+  sd.claimant = null;
+  if (!h || h.phase !== 'showdown' || sd.hand !== h.number || claimant === null || state.paused) {
+    sd.manual = true; // never restart an interrupted countdown
+    return true;
+  }
+  pushUndo(state);
+  let g = state.game!;
+  for (const seat of showdownContenders(state)) {
+    if (seat === claimant || g.hand!.phase !== 'showdown') continue;
+    g = muck(g, seat, { auto: true });
+    log(state, now, seat, 'autoFolded');
+  }
+  state.game = g;
+  afterGameChange(state);
+  return true;
 }
 
 /** Keep the room status in step with the tournament (a finished game can be revived by adding chips). */
@@ -643,10 +758,10 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       if (stale) throw new RoomError('PRE_ACTION_UNAVAILABLE');
       requireGame(state);
       const me = h?.seats.find((s) => s.seat === seat);
-      if (!h || (h.phase !== 'betting' && h.phase !== 'street-complete') || !me || me.folded || me.allIn) {
+      if (!h || h.phase !== 'betting' || !me || me.folded || me.allIn) {
         throw new RoomError('NOT_ALLOWED');
       }
-      if (h.phase === 'betting' && h.toAct === seat) throw new RoomError('NOT_ALLOWED');
+      if (h.toAct === seat) throw new RoomError('NOT_ALLOWED');
       // Checked against the amount actually owed now, not against what the client last saw.
       if (!preActionChoices(h, seat).includes(cmd.preAction)) throw new RoomError('PRE_ACTION_UNAVAILABLE');
       dropPreAction(state, seat);
@@ -674,25 +789,28 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       log(state, now, seat, 'left');
       return;
     }
-    case 'claim': {
-      const seat = targetSeat(state, actor, cmd.seat);
-      const h = requireGame(state).hand;
-      if (!h || h.phase !== 'showdown') throw new EngineError('WRONG_PHASE');
-      if (!currentPots(h).some((p) => p.eligible.includes(seat))) throw new RoomError('NOT_ELIGIBLE');
-      const has = state.claims.includes(seat);
-      if (cmd.won === has) return;
-      state.claims = cmd.won ? [...state.claims, seat].sort((a, b) => a - b) : state.claims.filter((s) => s !== seat);
-      log(state, now, seat, cmd.won ? 'claimed' : 'claimWithdrawn');
-      return;
-    }
-    case 'muck': {
+    case 'declare': {
       const seat = targetSeat(state, actor, cmd.seat);
       const g = requireGame(state);
-      pushUndo(state);
-      state.game = muck(g, seat);
-      state.claims = state.claims.filter((s) => s !== seat);
-      log(state, now, seat, 'mucked');
-      afterGameChange(state);
+      const h = g.hand;
+      if (cmd.hand !== undefined && cmd.hand !== h?.number) throw new RoomError('HAND_CHANGED');
+      if (!h || h.phase !== 'showdown') throw new EngineError('WRONG_PHASE');
+      if (!showdownContenders(state).includes(seat)) throw new RoomError('NOT_ELIGIBLE');
+      syncShowdown(state, now); // make sure the record exists for this hand
+      const sd = state.showdown!;
+      const current = sd.declarations[seat] ?? null;
+      if (cmd.declaration === 'fold') {
+        pushUndo(state);
+        state.game = muck(g, seat);
+        delete sd.declarations[seat];
+        log(state, now, seat, 'showdownFold');
+        afterGameChange(state);
+        return;
+      }
+      if (cmd.declaration === current) return;
+      if (cmd.declaration === null) delete sd.declarations[seat];
+      else sd.declarations[seat] = cmd.declaration;
+      log(state, now, seat, cmd.declaration === 'win' ? 'declaredWin' : cmd.declaration === 'tie' ? 'declaredTie' : 'declarationWithdrawn');
       return;
     }
     case 'host:approveJoin': {
@@ -802,12 +920,12 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       log(state, now, actorSeat, 'resumed');
       return;
     }
-    case 'host:advance': {
+    case 'host:showdown': {
       requireHost(state, actor);
       const g = requireRunning(state);
       pushUndo(state);
-      state.game = advanceStreet(g);
-      log(state, now, actorSeat, 'advanced', { street: state.game.hand!.phase === 'showdown' ? 'showdown' : state.game.hand!.street });
+      state.game = beginShowdown(g);
+      log(state, now, actorSeat, 'showdownStarted');
       return;
     }
     case 'host:award': {
@@ -826,7 +944,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       state.game = startHand(g, now);
       state.undo = [];
       clearPreActions(state);
-      state.claims = [];
+      state.showdown = null;
       return;
     }
     case 'host:undo': {
@@ -836,7 +954,9 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       if (!prev) throw new RoomError('NOTHING_TO_UNDO');
       state.game = prev;
       clearPreActions(state);
-      state.claims = [];
+      // Any countdown is void. Back in a showdown, the host decides (declarations are not restored).
+      const h = prev.hand;
+      state.showdown = h && h.phase === 'showdown' ? { hand: h.number, declarations: {}, manual: true, claimant: null, deadline: null } : null;
       state.status = prev.finished ? 'finished' : 'playing';
       log(state, now, actorSeat, 'undo');
       return;
@@ -956,7 +1076,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       clearPreActions(state);
       state.paused = false;
       state.pendingImport = null;
-      state.claims = [];
+      state.showdown = null;
       for (const req of Object.values(state.requests)) {
         if (!state.seats[req.seat] && req.seat <= state.settings.maxPlayers) addSeatWithChips(state, req.seat, req.nickname, req.token, 0, now);
       }
@@ -990,7 +1110,7 @@ function clearPreActions(state: RoomState) {
  */
 function sweepPreActions(state: RoomState) {
   const h = state.game?.hand;
-  if (!h || (h.phase !== 'betting' && h.phase !== 'street-complete')) {
+  if (!h || h.phase !== 'betting') {
     if (Object.keys(state.preActions).length || Object.keys(state.preActionNotices).length) clearPreActions(state);
     return;
   }
@@ -1051,6 +1171,19 @@ export function runAutomation(state: RoomState, now: number): void {
 // Views
 // ---------------------------------------------------------------------------
 
+function viewShowdown(state: RoomState): ShowdownView | null {
+  const sd = state.showdown;
+  const h = state.game?.hand;
+  if (!sd || !h || h.phase !== 'showdown' || sd.hand !== h.number) return null;
+  return {
+    declarations: { ...sd.declarations },
+    manual: sd.manual,
+    sidePots: currentPots(h).length > 1,
+    claimant: sd.claimant,
+    deadline: sd.deadline,
+  };
+}
+
 export function toView(state: RoomState, viewerSeat: number | null, now: number): RoomView {
   const g = state.game;
   const hand = g?.hand;
@@ -1085,7 +1218,7 @@ export function toView(state: RoomState, viewerSeat: number | null, now: number)
     joinRequests: Object.values(state.requests)
       .map((r) => ({ seat: r.seat, nickname: r.nickname, at: r.at }))
       .sort((a, b) => a.seat - b.seat),
-    claims: [...state.claims],
+    showdown: viewShowdown(state),
     log: state.log.slice(-50),
     expiresAt: expiresAt(state),
     serverTime: now,

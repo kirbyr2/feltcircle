@@ -1,15 +1,15 @@
 {
   "name": "@feltcircle/game-session",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "license": "MIT",
   "description": "GameSession abstraction shared by Local Mode and Online Mode clients.",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@feltcircle/poker-engine": "0.1.0",
-    "@feltcircle/chip-export": "0.1.0",
-    "@feltcircle/game-protocol": "0.1.0",
-    "@feltcircle/room-core": "0.1.0"
+    "@feltcircle/poker-engine": "0.1.1",
+    "@feltcircle/chip-export": "0.1.1",
+    "@feltcircle/game-protocol": "0.1.1",
+    "@feltcircle/room-core": "0.1.1"
   }
 }

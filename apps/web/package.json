@@ -1,6 +1,6 @@
 {
   "name": "@feltcircle/web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -13,12 +13,12 @@
     "sounds": "node scripts/make-sounds.mjs"
   },
   "dependencies": {
-    "@feltcircle/chip-export": "0.1.0",
-    "@feltcircle/game-protocol": "0.1.0",
-    "@feltcircle/game-session": "0.1.0",
-    "@feltcircle/i18n": "0.1.0",
-    "@feltcircle/poker-engine": "0.1.0",
-    "@feltcircle/room-core": "0.1.0",
+    "@feltcircle/chip-export": "0.1.1",
+    "@feltcircle/game-protocol": "0.1.1",
+    "@feltcircle/game-session": "0.1.1",
+    "@feltcircle/i18n": "0.1.1",
+    "@feltcircle/poker-engine": "0.1.1",
+    "@feltcircle/room-core": "0.1.1",
     "i18next": "^26.7.1",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",

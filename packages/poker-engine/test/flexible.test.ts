@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  advanceStreet,
+  beginShowdown,
   awardPots,
   createTournament,
   currentPots,
@@ -30,7 +30,7 @@ const code = (fn: () => unknown) => {
 /** Check down every street until showdown. */
 function toShowdown(t: TournamentState): TournamentState {
   while (t.hand!.phase !== 'showdown') {
-    if (t.hand!.phase === 'street-complete') t = advanceStreet(t);
+    if (t.hand!.phase === 'reveal') t = beginShowdown(t);
     else t = play(t, [[t.hand!.toAct!, t.hand!.currentBet > seat(t, t.hand!.toAct!).bet ? call : check]]);
   }
   return t;

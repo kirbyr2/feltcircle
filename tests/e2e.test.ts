@@ -65,16 +65,22 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await page.click('text=Raise to 100');
     await page.click('.action-row >> text=Fold'); // seat 2
     await page.click('.action-row >> text=Call 80'); // seat 3
-    await page.click('text=Cards dealt — continue');
+    // No "cards dealt" clicks: each street starts at once with a dealing instruction.
+    await page.waitForSelector('text=Deal the flop, then it’s Player 3’s turn.');
+    await shot(page, 'local-deal-flop');
     await page.click('.action-row >> text=Check'); // seat 3
     await page.click('.action-row >> text=Check'); // seat 1
-    await page.click('text=Cards dealt — continue');
+    await page.waitForSelector('text=Deal the turn, then it’s Player 3’s turn.');
     await page.click('.action-row >> text=Check');
     await page.click('.action-row >> text=Check');
-    await page.click('text=Cards dealt — continue');
+    await page.waitForSelector('text=Deal the river, then it’s Player 3’s turn.');
     await page.click('.action-row >> text=Check');
     await page.click('.action-row >> text=Check');
-    await page.waitForSelector('text=Showdown');
+    // One confirmation before the showdown.
+    await page.waitForSelector('text=Reveal your hands.');
+    await page.click('text=All cards dealt and hands revealed — begin showdown');
+    await page.waitForSelector('.panel-title >> text=Showdown');
+    await page.waitForSelector('text=Select Win, Tie or Fold.');
     await shot(page, 'local-showdown');
     await page.click('.chip-btn >> text=Player 3');
     await page.click('text=Award pots');
@@ -143,7 +149,8 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await guest.page.waitForTimeout(350); // let the panel fade-in finish
     await shot(guest.page, 'online-guest-turn-ja');
     await guest.page.click('.action-row >> nth=0 >> button >> nth=1'); // check
-    await host.page.click('text=Cards dealt — continue');
+    // The flop starts by itself; the host is told to deal it and wait for the guest.
+    await host.page.waitForSelector('text=Deal the flop, then wait for');
     // Post-flop: big blind (guest, now seat 2) first. Host pre-selects Check/Fold.
     await host.page.click('text=Check / Fold');
     await guest.page.click('.action-row >> button >> nth=2'); // bet

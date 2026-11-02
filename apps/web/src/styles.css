@@ -1740,3 +1740,82 @@ button.ring-seat:disabled {
   white-space: nowrap;
   border: 0;
 }
+
+/* Dealing instructions and showdown declarations */
+.deal-note {
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-left: 3px solid var(--gold);
+  background: rgba(214, 178, 94, 0.08);
+  color: var(--gold-hi);
+  font-size: 0.9rem;
+}
+
+.showdown-status {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.showdown-status.manual {
+  color: var(--gold-hi);
+  font-weight: 600;
+}
+
+.decl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+}
+
+.decl-block {
+  margin: 0.4rem 0;
+}
+
+.decl-name {
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+}
+
+.decl-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+}
+
+.btn-decl {
+  min-height: 48px;
+  border-radius: var(--radius-s);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.btn-decl.on {
+  border-color: var(--gold);
+  color: var(--gold-hi);
+  background: rgba(214, 178, 94, 0.14);
+}
+
+.btn-decl:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.btn-decl.counting {
+  box-shadow: 0 0 0 2px var(--gold) inset;
+}
+
+.decl-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.decl-warn {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--gold-hi);
+  text-align: center;
+}

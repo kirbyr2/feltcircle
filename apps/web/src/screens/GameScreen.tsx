@@ -6,7 +6,7 @@ import { navigate } from '../lib/router';
 import { useGame } from '../components/game-context';
 import { Table } from '../components/Table';
 import { ActionPanel } from '../components/ActionPanel';
-import { HandResultPanel, NoHandPanel, PreActions, ShowdownPanel, StreetPanel, WaitingPanel } from '../components/Panels';
+import { HandResultPanel, NoHandPanel, PreActions, RevealPanel, ShowdownPanel, WaitingPanel } from '../components/Panels';
 import { GameMenu } from '../components/HostMenu';
 import { ExportDialog } from '../components/ChipDialogs';
 import { HandRankingsDialog } from '../components/HandRankings';
@@ -100,14 +100,8 @@ export function GameScreen({ onDiscardLocal }: { onDiscardLocal?: () => void }) 
     else if (myTurn) bottom = <ActionPanel seat={mySeat!} />;
     else if (inHand) bottom = <PreActions seat={mySeat!} />;
     else bottom = <WaitingPanel />;
-  } else if (hand.phase === 'street-complete') {
-    bottom = (
-      <>
-        <StreetPanel />
-        {!local && inHand && !isHost && <PreActions seat={mySeat!} />}
-      </>
-    );
-  } else if (hand.phase === 'showdown') bottom = <ShowdownPanel />;
+  } else if (hand.phase === 'reveal') bottom = <RevealPanel />;
+  else if (hand.phase === 'showdown') bottom = <ShowdownPanel />;
   else bottom = <HandResultPanel />;
 
   return (

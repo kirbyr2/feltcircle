@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { legalActions, type PlayerAction } from '@feltcircle/poker-engine';
+import { legalActions, streetToDeal, type PlayerAction } from '@feltcircle/poker-engine';
 import { useI18n } from '../lib/i18n';
 import { useGame } from './game-context';
 import { BetSlider } from './BetSlider';
@@ -14,6 +14,8 @@ export function ActionPanel({ seat }: { seat: number }) {
   const hand = room.game!.hand!;
   const legal = legalActions(hand, seat);
   if (!legal) return null;
+  // First decision of the flop/turn/river: the table deals those cards before acting.
+  const deal = streetToDeal(hand);
 
   const act = async (action: PlayerAction) => {
     if (busy) return;
@@ -47,6 +49,11 @@ export function ActionPanel({ seat }: { seat: number }) {
         {local ? t('action.actingFor', { name: name(seat) }) : t('game.yourTurn')}
         {legal.callAmount > 0 && <span className="muted"> · {t('game.bet', { amount: n(legal.tableBet) })}</span>}
       </div>
+      {deal && (
+        <p className="deal-note" role="status">
+          {local ? t(`deal.${deal}Local`, { name: name(seat) }) : t(`deal.${deal}You`)}
+        </p>
+      )}
       {!local && <PreActionNotice />}
       <div className="action-row">
         <button className="btn btn-fold" disabled={disabled} onClick={() => act({ type: 'fold' })}>

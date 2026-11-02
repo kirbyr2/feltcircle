@@ -77,7 +77,9 @@ export function Table() {
                 {hand && hand.bbSeat === seat && <span className="marker marker-bb">{t('common.bb')}</span>}
                 {hs?.allIn && live && <span className="tag tag-allin">{t('common.allIn')}</span>}
                 {hs?.folded && live && <span className="tag">{hs.mucked ? t('common.mucked') : t('common.folded')}</span>}
-                {live && hand!.phase === 'showdown' && room.claims.includes(seat) && <span className="tag tag-claim">⚑ {t('showdown.claimed')}</span>}
+                {live && hand!.phase === 'showdown' && room.showdown?.declarations[seat] && (
+                  <span className="tag tag-claim">{room.showdown.declarations[seat] === 'win' ? t('showdown.win') : t('showdown.tie')}</span>
+                )}
                 {out && <span className="tag">{t('common.out')}</span>}
                 {sv.autoFold && !out && <span className="tag tag-auto">{sv.away ? t('common.away') : t('common.autoFold')}</span>}
               </div>

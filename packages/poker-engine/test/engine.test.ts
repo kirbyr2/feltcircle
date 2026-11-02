@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  advanceStreet,
+  beginShowdown,
   applyAction,
   awardPots,
   computePositions,
@@ -79,8 +79,8 @@ describe('blind posting and turn order', () => {
   it('post-flop action starts left of the dealer', () => {
     let t = begin({ 1: 1000, 2: 1000, 3: 1000, 4: 1000 });
     t = play(t, [[4, call], [1, call], [2, call], [3, check]]);
-    expect(t.hand!.phase).toBe('street-complete');
-    t = advanceStreet(t);
+    // No host confirmation: the flop starts at once (cards are dealt physically).
+    expect(t.hand!.phase).toBe('betting');
     expect(t.hand!.street).toBe('flop');
     expect(t.hand!.toAct).toBe(2);
   });
@@ -91,7 +91,7 @@ describe('blind posting and turn order', () => {
     expect(t.hand!.sbSeat).toBe(1);
     expect(t.hand!.toAct).toBe(1);
     t = play(t, [[1, call], [2, check]]);
-    t = advanceStreet(t);
+    expect(t.hand!.street).toBe('flop');
     expect(t.hand!.toAct).toBe(2);
   });
 
@@ -111,7 +111,9 @@ describe('blind posting and turn order', () => {
     expect(seat(t, 3).allIn).toBe(true);
     expect(t.hand!.currentBet).toBe(20);
     t = play(t, [[1, call], [2, call]]);
-    expect(t.hand!.phase).toBe('street-complete');
+    // Two players can still bet, so the flop is played even though the big blind is all-in.
+    expect(t.hand!.phase).toBe('betting');
+    expect(t.hand!.street).toBe('flop');
     const pots = currentPots(t.hand!);
     expect(pots).toEqual([
       { amount: 45, eligible: [1, 2, 3] },
@@ -134,7 +136,6 @@ describe('bet sizing', () => {
     expect(legalActions(t.hand!, 2)!.minTo).toBe(120);
     expect(code(() => applyAction(t, 2, raise(110)))).toBe('BET_TOO_SMALL');
     t = play(t, [[2, fold], [3, call]]);
-    t = advanceStreet(t);
     // Post-flop min bet is the big blind.
     expect(legalActions(t.hand!, 3)!.aggressive).toBe('bet');
     expect(legalActions(t.hand!, 3)!.minTo).toBe(20);
@@ -204,7 +205,6 @@ describe('action reopening', () => {
     let t = begin({ 1: 1000, 2: 1000, 3: 150, 4: 200 }, { firstDealer: 1 });
     // D=1 SB=2 BB=3 UTG=4 → postflop order 2,3,4,1
     t = play(t, [[4, call], [1, call], [2, call], [3, check]]);
-    t = advanceStreet(t);
     t = play(t, [[2, bet(80)]]); // full bet 80
     t = play(t, [[3, allin]]); // 130 total: +50, short
     t = play(t, [[4, allin]]); // 180 total: +50 more; cumulative +100 over 80 ≥ 80
@@ -236,11 +236,11 @@ describe('uncalled bets and uncontested pots', () => {
     let t = begin({ 1: 1000, 2: 1000, 3: 300 });
     t = play(t, [[1, raise(800)], [2, fold], [3, call]]);
     // 3 called all-in 300 → 500 refunded to 1
-    expect(t.hand!.phase).toBe('street-complete');
+    expect(t.hand!.phase).toBe('reveal');
     expect(t.hand!.bettingClosed).toBe(true);
     expect(seat(t, 1).committed).toBe(300);
     expect(seat(t, 1).stack).toBe(700);
-    t = advanceStreet(t);
+    t = beginShowdown(t);
     expect(t.hand!.phase).toBe('showdown');
     expect(currentPots(t.hand!)).toEqual([{ amount: 610, eligible: [1, 3] }]);
   });
@@ -264,7 +264,7 @@ describe('side pots and showdown', () => {
 
   it('builds main and multiple side pots', () => {
     const t = threeWayAllIn();
-    expect(t.hand!.phase).toBe('street-complete');
+    expect(t.hand!.phase).toBe('reveal');
     expect(t.hand!.bettingClosed).toBe(true);
     const pots = currentPots(t.hand!);
     expect(pots).toEqual([
@@ -277,7 +277,7 @@ describe('side pots and showdown', () => {
   });
 
   it('awards each pot to separately selected winners', () => {
-    let t = advanceStreet(threeWayAllIn());
+    let t = beginShowdown(threeWayAllIn());
     t = awardPots(t, [[1], [2], [4]]);
     expect(t.chips).toEqual({ 1: 400, 2: 600, 3: 0, 4: 1000 });
     expect(totalChips(t)).toBe(2000);
@@ -285,7 +285,7 @@ describe('side pots and showdown', () => {
   });
 
   it('rejects ineligible winners', () => {
-    const t = advanceStreet(threeWayAllIn());
+    const t = beginShowdown(threeWayAllIn());
     expect(code(() => awardPots(t, [[1], [1], [4]]))).toBe('INVALID_WINNERS');
     expect(code(() => awardPots(t, [[1], [2]]))).toBe('INVALID_WINNERS');
     expect(code(() => awardPots(t, [[1], [], [4]]))).toBe('INVALID_WINNERS');
@@ -295,11 +295,10 @@ describe('side pots and showdown', () => {
     let t = begin({ 1: 1000, 2: 200, 3: 1000 });
     // D1 SB2 BB3. 1 raises 100, 2 shoves 200, 3 calls 200, 1 calls → river with checks, then 3 folds to a bet
     t = play(t, [[1, raise(100)], [2, allin], [3, call], [1, call]]);
-    t = advanceStreet(t);
     t = play(t, [[3, bet(400)], [1, fold]]);
-    // 3 bet uncalled → refunded; pot: main 600 eligible 2,3
-    expect(t.hand!.phase).toBe('street-complete');
-    t = advanceStreet(t);
+    // 3 bet uncalled → refunded; pot: main 600 eligible 2,3; nobody else can bet
+    expect(t.hand!.phase).toBe('reveal');
+    t = beginShowdown(t);
     expect(t.hand!.phase).toBe('showdown');
     expect(currentPots(t.hand!)).toEqual([{ amount: 600, eligible: [2, 3] }]);
   });
@@ -314,10 +313,9 @@ describe('side pots and showdown', () => {
   it('tied winners at showdown', () => {
     let t = begin({ 1: 1000, 2: 1000, 3: 1000 });
     t = play(t, [[1, call], [2, raise(55)], [3, call], [1, call]]);
-    for (const _ of [0, 1, 2]) {
-      t = advanceStreet(t);
-      t = play(t, [[2, check], [3, check], [1, check]]);
-    }
+    for (const _ of [0, 1, 2]) t = play(t, [[2, check], [3, check], [1, check]]);
+    expect(t.hand!.phase).toBe('reveal');
+    t = beginShowdown(t);
     expect(t.hand!.phase).toBe('showdown');
     const pots = currentPots(t.hand!);
     expect(pots).toEqual([{ amount: 165, eligible: [1, 2, 3] }]);
@@ -355,7 +353,7 @@ describe('eliminations and tournament end', () => {
   it('eliminates busted players and ends with one winner', () => {
     let t = begin({ 1: 500, 2: 500 });
     t = play(t, [[1, allin], [2, call]]);
-    t = advanceStreet(t);
+    t = beginShowdown(t);
     t = awardPots(t, [[2]]);
     expect(t.finished).toBe(true);
     expect(t.winner).toBe(2);
@@ -366,10 +364,8 @@ describe('eliminations and tournament end', () => {
   it('busted players are skipped in later hands', () => {
     let t = begin({ 1: 100, 2: 1000, 3: 1000 });
     t = play(t, [[1, allin], [2, call], [3, call]]);
-    for (let i = 0; i < 3; i++) {
-      t = advanceStreet(t);
-      if (t.hand!.phase === 'betting') t = play(t, [[2, check], [3, check]]);
-    }
+    for (let i = 0; i < 3; i++) t = play(t, [[2, check], [3, check]]);
+    t = beginShowdown(t);
     expect(currentPots(t.hand!)).toEqual([{ amount: 300, eligible: [1, 2, 3] }]);
     t = awardPots(t, [[2]]);
     expect(t.chips[1]).toBe(0);
@@ -467,7 +463,7 @@ describe('chip conservation fuzz', () => {
             } else if (l.canAllIn) a = allin;
             else a = l.canCheck ? check : call;
             t = applyAction(t, h.toAct!, a);
-          } else if (h.phase === 'street-complete') t = advanceStreet(t);
+          } else if (h.phase === 'reveal') t = beginShowdown(t);
           else if (h.phase === 'showdown') {
             const pots = currentPots(h);
             t = awardPots(
