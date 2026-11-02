@@ -1,0 +1,9 @@
+{
+  "name": "@feltcircle/chip-export",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Portable, versioned seat→chips export format.",
+  "exports": { ".": "./src/index.ts" }
+}

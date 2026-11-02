@@ -1,0 +1,25 @@
+{
+  "name": "@feltcircle/server-node",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "FeltCircle authoritative multiplayer server for ordinary VPS hosting (Node.js + WebSocket + SQLite).",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.mjs --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\"",
+    "start": "node --disable-warning=ExperimentalWarning dist/server.mjs"
+  },
+  "dependencies": {
+    "@feltcircle/chip-export": "1.0.0",
+    "@feltcircle/game-protocol": "1.0.0",
+    "@feltcircle/poker-engine": "1.0.0",
+    "@feltcircle/room-core": "1.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0"
+  }
+}

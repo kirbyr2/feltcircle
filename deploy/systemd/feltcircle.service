@@ -1,0 +1,43 @@
+# FeltCircle as a systemd service (without Docker).
+# Layout:  /opt/feltcircle/server.mjs, /opt/feltcircle/web/  (see docs/DEPLOYMENT.md)
+#          /etc/feltcircle/feltcircle.env  (copy of .env.example)
+# Install: sudo cp feltcircle.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now feltcircle
+
+[Unit]
+Description=FeltCircle poker chip server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=feltcircle
+Group=feltcircle
+WorkingDirectory=/opt/feltcircle
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+Environment=DATA_DIR=/var/lib/feltcircle
+Environment=STATIC_DIR=/opt/feltcircle/web
+Environment=TRUST_PROXY=true
+EnvironmentFile=-/etc/feltcircle/feltcircle.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /opt/feltcircle/server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+StateDirectory=feltcircle
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/feltcircle
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

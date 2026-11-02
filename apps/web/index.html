@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Invitation links look like <app>/join/CODE. Hand them to the app's hash router
+      // (this also runs from 404.html on static hosts without a rewrite rule).
+      (function () {
+        var m = location.pathname.match(/^(.*\/)join\/([A-Za-z0-9]{5})\/?$/);
+        if (m) location.replace(m[1] + '#/join/' + m[2].toUpperCase() + location.search);
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090a" />
+    <meta name="description" content="FeltCircle — Real games. Digital scoring. Digital poker chips for in-person Texas Hold'em." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FeltCircle" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>FeltCircle</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "@feltcircle/poker-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Deterministic No-Limit Texas Hold'em betting engine (no cards).",
+  "exports": { ".": "./src/index.ts" }
+}

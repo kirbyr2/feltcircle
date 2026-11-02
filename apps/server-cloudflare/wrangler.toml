@@ -1,0 +1,35 @@
+# FeltCircle on Cloudflare Workers + Durable Objects (SQLite-backed).
+# Deploy:  npm run deploy:cloudflare   (from the repository root)
+name = "feltcircle"
+main = "src/worker.ts"
+compatibility_date = "2025-04-01"
+
+# Use a custom domain without exposing account-specific hostnames.
+workers_dev = false
+preview_urls = false
+
+# The static web app (apps/web/dist) is served by Workers Static Assets.
+# The same build works on any static host; nothing is Cloudflare-specific in it.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/ws"]
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDurableObject"
+
+[[durable_objects.bindings]]
+name = "LIMITER"
+class_name = "RateLimiterDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDurableObject", "RateLimiterDurableObject"]
+
+[vars]
+# Comma-separated origins allowed to use this backend from another domain, or "*".
+CORS_ORIGINS = "*"
+# Rooms one client IP may create per hour.
+ROOM_CREATE_LIMIT = "30"

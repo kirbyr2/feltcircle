@@ -1,0 +1,49 @@
+# Optional: publish the static web app to GitHub Pages (Local Mode works with no backend).
+# Enable it under Settings → Pages → Source: "GitHub Actions", then run this workflow.
+# To enable Online Multiplayer from Pages, set the repository variable
+# FELTCIRCLE_BACKEND_URL (Settings → Secrets and variables → Actions → Variables)
+# to your backend, e.g. https://chips.example.org, and allow the Pages origin
+# in that backend's CORS_ORIGINS.
+name: Deploy web app to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+      - name: Configure backend URL
+        env:
+          BACKEND: ${{ vars.FELTCIRCLE_BACKEND_URL }}
+        run: |
+          node -e "require('fs').writeFileSync('apps/web/dist/config.json', JSON.stringify({ backendUrl: process.env.BACKEND || '' }) + '\n')"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

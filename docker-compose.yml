@@ -1,0 +1,24 @@
+# FeltCircle on a VPS with Docker Compose.
+#   cp .env.example .env    # optional: adjust settings
+#   docker compose up -d --build
+# The container listens on 127.0.0.1 only; put Nginx/OpenResty/Caddy in front for HTTPS
+# (example config: deploy/nginx/feltcircle.conf).
+services:
+  feltcircle:
+    build: .
+    image: feltcircle:latest
+    container_name: feltcircle
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-8787}:8787"
+    environment:
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      ROOM_CREATE_LIMIT: ${ROOM_CREATE_LIMIT:-30}
+      MAX_ROOMS: ${MAX_ROOMS:-5000}
+    volumes:
+      - feltcircle-data:/data
+    stop_grace_period: 15s
+
+volumes:
+  feltcircle-data:

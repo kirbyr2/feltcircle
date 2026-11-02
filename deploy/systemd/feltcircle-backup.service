@@ -1,0 +1,11 @@
+# Daily SQLite snapshot for the systemd deployment (paired with feltcircle-backup.timer).
+[Unit]
+Description=FeltCircle database backup
+
+[Service]
+Type=oneshot
+User=feltcircle
+Group=feltcircle
+Environment=DATA_DIR=/var/lib/feltcircle
+EnvironmentFile=-/etc/feltcircle/feltcircle.env
+ExecStart=/opt/feltcircle/backup.sh

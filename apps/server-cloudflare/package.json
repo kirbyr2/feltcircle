@@ -1,0 +1,23 @@
+{
+  "name": "@feltcircle/server-cloudflare",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "FeltCircle multiplayer backend for Cloudflare Workers + SQLite-backed Durable Objects.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run --outdir dist"
+  },
+  "dependencies": {
+    "@feltcircle/chip-export": "1.0.0",
+    "@feltcircle/game-protocol": "1.0.0",
+    "@feltcircle/poker-engine": "1.0.0",
+    "@feltcircle/room-core": "1.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Build first so the browser end-to-end tests can serve the real web app.
+      - run: npm run build
+      # ubuntu-latest ships Google Chrome, so tests/e2e.test.ts runs here too.
+      - run: npm test
+      - name: Validate Cloudflare Worker bundle
+        run: npx wrangler deploy --dry-run --outdir /tmp/cf-dist
+        working-directory: apps/server-cloudflare
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 7
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: feltcircle:ci
+      - name: Smoke test container
+        run: |
+          docker run -d --name fc -p 127.0.0.1:8787:8787 feltcircle:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8787/healthz && break; sleep 1; done
+          curl -fs http://127.0.0.1:8787/api/capabilities
+          curl -fs -o /dev/null http://127.0.0.1:8787/
+          curl -fs -X POST -H 'content-type: application/json' -d '{"settings":{}}' http://127.0.0.1:8787/api/rooms
+          docker exec fc node server.mjs backup
+          docker logs fc

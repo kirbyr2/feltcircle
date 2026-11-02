@@ -1,0 +1,38 @@
+{
+  "name": "@feltcircle/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "FeltCircle mobile-first web app (static; identical build for every host).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "icons": "node scripts/make-icons.mjs",
+    "sounds": "node scripts/make-sounds.mjs"
+  },
+  "dependencies": {
+    "@feltcircle/chip-export": "1.0.0",
+    "@feltcircle/game-protocol": "1.0.0",
+    "@feltcircle/game-session": "1.0.0",
+    "@feltcircle/i18n": "1.0.0",
+    "@feltcircle/poker-engine": "1.0.0",
+    "@feltcircle/room-core": "1.0.0",
+    "i18next": "^26.7.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-i18next": "^17.1.11"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^30.1.3",
+    "vite": "^7.0.0"
+  }
+}

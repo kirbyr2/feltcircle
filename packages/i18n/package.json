@@ -1,0 +1,9 @@
+{
+  "name": "@feltcircle/i18n",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "FeltCircle translations (one JSON file per locale, stable keys).",
+  "exports": { ".": "./src/index.ts" }
+}
