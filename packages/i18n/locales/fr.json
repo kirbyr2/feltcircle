@@ -94,6 +94,14 @@
   "join.requested": "Demandée",
   "join.requestSent": "Place {seat} demandée. En attente de l'hôte…",
   "join.requestHint": "Vous serez assis dès que l'hôte aura accepté.",
+  "join.tableLabel": "Places autour de la table",
+  "join.sitAria": "S'asseoir à la place {seat}",
+  "join.requestAria": "Demander la place {seat} à l'hôte",
+  "join.takeOverAria": "Reprendre la place {seat} ({name})",
+  "join.seatTaken": "Place {seat} : {name}",
+  "join.joining": "Connexion…",
+  "join.yourSeat": "Votre place",
+  "join.reclaim": "Reprendre",
 
   "lobby.title": "Salle d’attente",
   "lobby.roomCode": "Code de la salle",
@@ -109,6 +117,8 @@
   "lobby.remove": "Retirer",
   "lobby.settings": "Réglages de la table",
   "lobby.importStaged": "Les jetons importés seront utilisés au début de la partie.",
+  "lobby.renumberNote": "Au début de la partie, les places sont renumérotées sans trou, dans le même ordre (sens horaire).",
+  "lobby.manageSeat": "Place {seat} : {name}. Toucher pour gérer",
 
   "street.preflop": "Pré-flop",
   "street.flop": "Flop",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} revendique la victoire",
   "roomlog.claimWithdrawn": "{name} a retiré sa revendication",
   "roomlog.mucked": "{name} a jeté ses cartes",
+  "roomlog.seatsRenumbered": "Places renumérotées sans trou pour la partie",
 
   "error.NO_HAND": "Aucune main en cours.",
   "error.HAND_IN_PROGRESS": "Terminez d’abord la main en cours.",

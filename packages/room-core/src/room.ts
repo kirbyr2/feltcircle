@@ -384,6 +384,12 @@ export interface CommandResult {
   deleted?: boolean;
   /** True when this exact command id was already processed (idempotent replay). */
   duplicate?: boolean;
+  /**
+   * Set when the command renumbered the seats (game start): waiting-room seat →
+   * in-game seat. Backends must rebind live connections with it before
+   * broadcasting the new state.
+   */
+  seatMap?: Record<number, number>;
 }
 
 function errorCode(e: unknown): string {
@@ -401,8 +407,9 @@ export function applyCommand(state0: RoomState, actor: Actor, cmd: Command, now:
   if (key && state0.recent.some((r) => r.key === key)) return { state: state0, ok: true, duplicate: true };
   const state = clone(state0);
   let deleted = false;
+  const out: ExecuteOutput = {};
   try {
-    deleted = execute(state, actor, cmd, now) === 'deleted';
+    deleted = execute(state, actor, cmd, now, out) === 'deleted';
     runAutomation(state, now);
     syncClaims(state);
   } catch (e) {
@@ -412,10 +419,96 @@ export function applyCommand(state0: RoomState, actor: Actor, cmd: Command, now:
   state.version++;
   state.lastActivityAt = now;
   if (key) {
-    state.recent.push({ key, version: state.version });
+    // After a renumbering, a retried command (e.g. after a reconnect) arrives from the sender's new seat.
+    const moved = out.seatMap && !actor.local && actor.seat !== null ? out.seatMap[actor.seat] : undefined;
+    state.recent.push({ key: moved !== undefined ? `${moved}:${commandId}` : key, version: state.version });
     if (state.recent.length > MAX_RECENT) state.recent.splice(0, state.recent.length - MAX_RECENT);
   }
-  return { state, ok: true, deleted };
+  return out.seatMap ? { state, ok: true, deleted, seatMap: out.seatMap } : { state, ok: true, deleted };
+}
+
+interface ExecuteOutput {
+  seatMap?: Record<number, number>;
+}
+
+// ---------------------------------------------------------------------------
+// Seat renumbering (waiting room → game)
+// ---------------------------------------------------------------------------
+
+/**
+ * Consecutive in-game seat numbers for the occupied waiting-room seats:
+ * the lowest occupied seat becomes 1 and the rest follow clockwise
+ * (ascending seat order), e.g. {1, 2, 4, 6} → {1→1, 2→2, 4→3, 6→4}.
+ */
+export function seatRenumbering(occupied: readonly number[]): Record<number, number> {
+  const map: Record<number, number> = {};
+  [...occupied].sort((a, b) => a - b).forEach((seat, i) => (map[seat] = i + 1));
+  return map;
+}
+
+/** Log params that hold seat numbers (other numeric params are chips, levels, …). */
+const SEAT_PARAMS: Record<string, readonly string[]> = {
+  joinRequested: ['seat'],
+  joinApproved: ['seat'],
+  joinRejected: ['seat'],
+  chipsAdjusted: ['seat'],
+  hostClaimed: ['from'],
+  hostTransferred: ['from', 'to'],
+  forceFold: ['seat'],
+  removed: ['seat'],
+};
+
+/**
+ * Move every seat-based reference in the room to the new numbering, in place.
+ * Seat records keep their identity (nickname, token, connection state), so
+ * reconnecting players resolve to their new seat through their token.
+ * History entries about players who are no longer seated are dropped, since
+ * their old seat numbers would now name someone else.
+ */
+function applySeatMap(state: RoomState, map: Record<number, number>) {
+  const has = (seat: number) => Object.prototype.hasOwnProperty.call(map, seat);
+  const seats: Record<number, SeatRecord> = {};
+  for (const rec of Object.values(state.seats)) {
+    const to = map[rec.seat];
+    seats[to] = { ...rec, seat: to };
+  }
+  state.seats = seats;
+  if (state.hostSeat !== null) state.hostSeat = has(state.hostSeat) ? map[state.hostSeat] : null;
+  const preActions: RoomState['preActions'] = {};
+  for (const [k, v] of Object.entries(state.preActions)) if (has(Number(k))) preActions[map[Number(k)]] = v;
+  state.preActions = preActions;
+  state.claims = state.claims.filter(has).map((seat) => map[seat]);
+  // `requests` needs no mapping: late-join requests cannot exist in the waiting
+  // room (requestSeat refuses there and host:newGame turns them into seats).
+  // Idempotency keys are "<seat>:<commandId>"; keep them attached to the same player.
+  state.recent = state.recent.flatMap((r) => {
+    const i = r.key.indexOf(':');
+    const seat = Number(r.key.slice(0, i));
+    if (!Number.isInteger(seat)) return [r];
+    return has(seat) ? [{ ...r, key: `${map[seat]}${r.key.slice(i)}` }] : [];
+  });
+  const history: RoomLogEntry[] = [];
+  for (const e of state.log) {
+    if (e.seat !== null && !has(e.seat)) continue;
+    const keys = SEAT_PARAMS[e.code] ?? [];
+    // `from: 0` in hostTransferred means "no previous host"; it is not a seat.
+    const seatParam = (k: string) => {
+      const v = e.params?.[k];
+      return typeof v === 'number' && v !== 0 ? v : null;
+    };
+    if (keys.some((k) => seatParam(k) !== null && !has(seatParam(k)!))) continue;
+    const entry: RoomLogEntry = { ...e, seat: e.seat === null ? null : map[e.seat] };
+    if (e.params) {
+      const params = { ...e.params };
+      for (const k of keys) {
+        const v = seatParam(k);
+        if (v !== null) params[k] = map[v];
+      }
+      entry.params = params;
+    }
+    history.push(entry);
+  }
+  state.log = history;
 }
 
 function isHost(state: RoomState, actor: Actor) {
@@ -509,7 +602,7 @@ function addSeatWithChips(state: RoomState, seat: number, nickname: string, toke
   }
 }
 
-function execute(state: RoomState, actor: Actor, cmd: Command, now: number): void | 'deleted' {
+function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out: ExecuteOutput = {}): void | 'deleted' {
   const actorSeat = actor.local ? null : actor.seat;
   switch (cmd.type) {
     case 'act': {
@@ -647,7 +740,19 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number): voi
         for (const s of seats) chips[s] = state.settings.startingChips;
       }
       if (Object.values(chips).filter((c) => c > 0).length < 2) throw new RoomError('IMPORT_NEEDS_TWO');
-      const dealer = cmd.dealerSeat !== undefined && chips[cmd.dealerSeat] > 0 ? cmd.dealerSeat : undefined;
+      const chosenDealer = cmd.dealerSeat !== undefined && chips[cmd.dealerSeat] > 0 ? cmd.dealerSeat : undefined;
+      // Close the gaps once, atomically with the start: waiting-room seats
+      // {1, 2, 4, 6} play as {1, 2, 3, 4}, in the same clockwise order.
+      const map = seatRenumbering(seats);
+      const renumbered: SeatChips = {};
+      for (const [k, c] of Object.entries(chips)) renumbered[map[Number(k)]] = c;
+      chips = renumbered;
+      const dealer = chosenDealer !== undefined ? map[chosenDealer] : undefined;
+      applySeatMap(state, map);
+      if (Object.entries(map).some(([from, to]) => Number(from) !== to)) {
+        out.seatMap = map;
+        log(state, now, null, 'seatsRenumbered');
+      }
       const players = Object.values(chips).filter((c) => c > 0).length;
       const t = createTournament({ config: configFromSettings(state.settings, players), chips, now, firstDealer: dealer });
       state.game = startHand(t, now);
@@ -656,7 +761,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number): voi
       state.undo = [];
       state.preActions = {};
       state.pendingImport = null;
-      log(state, now, actorSeat, 'started');
+      log(state, now, actorSeat === null ? null : (map[actorSeat] ?? null), 'started');
       return;
     }
     case 'host:pause': {
@@ -914,6 +1019,7 @@ export function toView(state: RoomState, viewerSeat: number | null, now: number)
     pots: !hand || hand.phase === 'complete' ? [] : hand.phase === 'betting' ? displayPots(hand.seats) : currentPots(hand),
     nextLevelInMs: g && state.status === 'playing' ? msUntilNextLevel(g, now) : null,
     myPreAction: viewerSeat !== null ? (state.preActions[viewerSeat] ?? null) : null,
+    viewerSeat,
     canUndo: state.undo.length > 0,
     pendingImport: state.pendingImport ? resolvePendingForView(state) : null,
     joinRequests: Object.values(state.requests)

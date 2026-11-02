@@ -30,6 +30,10 @@ Invite links are real paths such as `https://example.com/join/CFW27`. The app tu
 - **GitHub Pages and other static hosts:** the build writes `404.html`, which performs the same redirect. Make sure you uploaded it together with `index.html`.
 - `#/join/CFW27` (and the older `#/room/CFW27`) always work, even without any of the above.
 
+## My seat number changed when the game started
+
+That's expected. In the waiting room everyone keeps the seat they picked. When the host starts the game, empty seats are removed and the players are renumbered 1, 2, 3, … in the same clockwise order (for example 1, 2, 4, 6 → 1, 2, 3, 4). Sit around the physical table in that order. Reloading or reconnecting always returns you to your new seat.
+
 ## A late player is stuck on "Waiting for the host"
 
 After the game starts, new players can't sit down directly. They send a request that the host must approve. The host sees a *Join requests* banner on the table (also in the game menu) and chooses the new player's chips. If the table is full, the host can raise the table size (up to 10) in the game menu first.

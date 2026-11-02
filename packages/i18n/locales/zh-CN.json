@@ -94,6 +94,14 @@
   "join.requested": "已申请",
   "join.requestSent": "已申请 {seat} 号座位，等待房主批准…",
   "join.requestHint": "房主批准后你将立即入座。",
+  "join.tableLabel": "牌桌座位",
+  "join.sitAria": "坐到 {seat} 号座位",
+  "join.requestAria": "向房主申请 {seat} 号座位",
+  "join.takeOverAria": "接管 {seat} 号座位（{name}）",
+  "join.seatTaken": "{seat} 号座位：{name}",
+  "join.joining": "正在加入…",
+  "join.yourSeat": "你的座位",
+  "join.reclaim": "收回",
 
   "lobby.title": "等候室",
   "lobby.roomCode": "房间号",
@@ -109,6 +117,8 @@
   "lobby.remove": "移除",
   "lobby.settings": "牌桌设置",
   "lobby.importStaged": "游戏开始时将使用导入的筹码。",
+  "lobby.renumberNote": "开始游戏时，座位会按顺时针顺序重新连续编号。",
+  "lobby.manageSeat": "{seat} 号座位：{name}。点按以管理",
 
   "street.preflop": "翻牌前",
   "street.flop": "翻牌",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} 声明获胜",
   "roomlog.claimWithdrawn": "{name} 撤回了声明",
   "roomlog.mucked": "{name} 盖牌",
+  "roomlog.seatsRenumbered": "已为本局重新连续编号座位",
 
   "error.NO_HAND": "当前没有进行中的牌局。",
   "error.HAND_IN_PROGRESS": "请先完成当前这一手。",

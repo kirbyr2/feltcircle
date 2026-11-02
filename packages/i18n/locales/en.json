@@ -94,6 +94,14 @@
   "join.requested": "Requested",
   "join.requestSent": "Request sent for seat {seat}. Waiting for the host…",
   "join.requestHint": "You will be seated as soon as the host approves.",
+  "join.tableLabel": "Seats around the table",
+  "join.sitAria": "Sit in seat {seat}",
+  "join.requestAria": "Ask the host for seat {seat}",
+  "join.takeOverAria": "Take over seat {seat} ({name})",
+  "join.seatTaken": "Seat {seat}: {name}",
+  "join.joining": "Joining…",
+  "join.yourSeat": "Your seat",
+  "join.reclaim": "Reclaim",
 
   "lobby.title": "Waiting room",
   "lobby.roomCode": "Room code",
@@ -109,6 +117,8 @@
   "lobby.remove": "Remove",
   "lobby.settings": "Table settings",
   "lobby.importStaged": "Imported chips will be used when the game starts.",
+  "lobby.renumberNote": "When the game starts, seats are renumbered without gaps, keeping the clockwise order.",
+  "lobby.manageSeat": "Seat {seat}: {name}. Tap to manage",
 
   "street.preflop": "Pre-flop",
   "street.flop": "Flop",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} claims the win",
   "roomlog.claimWithdrawn": "{name} withdrew the claim",
   "roomlog.mucked": "{name} mucked",
+  "roomlog.seatsRenumbered": "Seats renumbered without gaps for the game",
 
   "error.NO_HAND": "No hand is in progress.",
   "error.HAND_IN_PROGRESS": "Finish the current hand first.",

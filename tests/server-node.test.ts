@@ -109,6 +109,64 @@ describe('Node.js backend', () => {
     expect(again.session.getSnapshot().room!.game!.chips[4]).toBe(3500);
   });
 
+  it('renumbers sparse seats at the start: every client agrees and reconnects to its new seat', async () => {
+    const { base, server } = await boot();
+    const created = await createRoomRequest(base, { settings: { maxPlayers: 6 }, nickname: 'Host' });
+    if (!created.ok) throw new Error(created.error);
+    const id = created.room.roomId;
+    const hostTokens = new MemoryTokens();
+    hostTokens.set(id, created.room.token);
+    const host = track(client(base, id, hostTokens));
+    const p3 = track(client(base, id));
+    const p6 = track(client(base, id));
+    await waitFor(() => [host, p3, p6].every((c) => c.session.getSnapshot().connection === 'online'));
+    expect((await p3.session.join(3, 'P3')).ok).toBe(true);
+    expect((await p6.session.join(6, 'P6')).ok).toBe(true);
+    // Waiting room: original numbers.
+    expect(p6.session.getSnapshot().mySeat).toBe(6);
+
+    expect((await host.session.send({ type: 'host:start', dealerSeat: 6 })).ok).toBe(true);
+    await waitFor(
+      () => p3.session.getSnapshot().mySeat === 2 && p6.session.getSnapshot().mySeat === 3 && host.session.getSnapshot().mySeat === 1,
+      5000,
+      'renumbered seats',
+    );
+    const table = (c: typeof host) => c.session.getSnapshot().room!.seats.map((x) => [x.seat, x.nickname, x.connected]);
+    await waitFor(() => [host, p3, p6].every((c) => c.session.getSnapshot().room?.status === 'playing'));
+    for (const c of [host, p3, p6]) {
+      expect(table(c)).toEqual([
+        [1, 'Host', true],
+        [2, 'P3', true],
+        [3, 'P6', true],
+      ]);
+      expect(c.session.getSnapshot().room!.hostSeat).toBe(1);
+    }
+    expect(host.session.getSnapshot().isHost).toBe(true);
+    // Dealer chosen in the waiting room (seat 6) is in-game seat 3; SB 1, BB 2, seat 3 acts first.
+    const hand = p6.session.getSnapshot().room!.game!.hand!;
+    expect([hand.dealer, hand.sbSeat, hand.bbSeat, hand.toAct]).toEqual([3, 1, 2, 3]);
+    // The server bound each connection to the new seat: turn checks follow the player.
+    expect((await p3.session.send({ type: 'act', action: { type: 'call' } })).error).toBe('NOT_YOUR_TURN');
+    expect((await p6.session.send({ type: 'act', action: { type: 'call' } })).ok).toBe(true);
+    await waitFor(() => host.session.getSnapshot().room!.game!.hand!.toAct === 1);
+
+    // Reconnect with the stored token (e.g. reload): back on the mapped seat.
+    p3.session.dispose();
+    await waitFor(() => host.session.getSnapshot().room!.seats.find((x) => x.seat === 2)?.connected === false, 5000, 'offline');
+    const again = track(client(base, id, p3.tokens));
+    await waitFor(() => again.session.getSnapshot().mySeat === 2, 5000, 'reconnected to seat 2');
+    await waitFor(() => host.session.getSnapshot().room!.seats.find((x) => x.seat === 2)?.connected === true, 5000, 'online again');
+
+    // Persisted atomically with the start: the stored room has the renumbered table.
+    const stored = server.db.get(id, now())!;
+    expect(Object.values(stored.seats).map((x) => [x.seat, x.nickname])).toEqual([
+      [1, 'Host'],
+      [2, 'P3'],
+      [3, 'P6'],
+    ]);
+    expect(stored.game!.seats).toEqual([1, 2, 3]);
+  });
+
   it('a rejected late joiner is told so', async () => {
     const { base } = await boot();
     const { id, s } = await roomWithPlayers(base, 2);

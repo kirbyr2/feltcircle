@@ -112,13 +112,18 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
 
     // Guest opens the invitation URL (what the QR code contains). Browser language is French.
     await guest.page.goto(`${base}join/${code}`);
-    await guest.page.waitForSelector('.seat-card.free');
+    await guest.page.waitForSelector('.seat-ring .ring-free');
     await guest.page.fill('.field input', 'Guy');
     await shot(guest.page, 'online-seatpicker');
-    await guest.page.click('.seat-card.free >> nth=1'); // seat 3
-    await guest.page.waitForSelector('.lobby-seats');
+    // Circular picker: seat 1 (the host) at the top, seat 3 is the second free seat.
+    await guest.page.click('.ring-free >> nth=1');
+    await guest.page.waitForSelector('.lobby .seat-ring .ring-me');
+    expect(await guest.page.locator('.ring-me .seat-no').innerText()).toBe('3');
     await host.page.waitForSelector('text=Guy');
     await shot(guest.page, 'online-lobby-guest');
+    // The waiting room keeps the original numbers (1 and 3) and explains the renumbering.
+    expect(await host.page.locator('.lobby .ring-taken .seat-no').allInnerTexts()).toEqual(['1', '3']);
+    await host.page.waitForSelector('text=renumbered without gaps');
 
     // Guest switches personal language to Japanese; host stays English.
     await guest.page.selectOption('.lobby select >> nth=-1', 'ja');
@@ -128,6 +133,10 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await host.page.click('text=Start game');
     await host.page.waitForSelector('.table-felt');
     await guest.page.waitForSelector('.table-felt');
+    // Seats are renumbered without gaps: the guest (waiting-room seat 3) plays as seat 2,
+    // on both phones, and only seated players are shown around the table.
+    await guest.page.waitForFunction(() => document.querySelector('.seat-me .seat-no')?.textContent === '2');
+    expect(await host.page.locator('.table-wrap .seat .seat-no').allInnerTexts()).toEqual(['1', '2']);
     // Heads-up: host (seat 1) is dealer/SB and acts first.
     await host.page.click('.action-row >> text=Call 10');
     await guest.page.waitForSelector('.action-row');
@@ -135,7 +144,7 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await shot(guest.page, 'online-guest-turn-ja');
     await guest.page.click('.action-row >> nth=0 >> button >> nth=1'); // check
     await host.page.click('text=Cards dealt — continue');
-    // Post-flop: big blind (guest, seat 3) first. Host pre-selects Check/Fold.
+    // Post-flop: big blind (guest, now seat 2) first. Host pre-selects Check/Fold.
     await host.page.click('text=Check / Fold');
     await guest.page.click('.action-row >> button >> nth=2'); // bet
     await guest.page.click('.quick-row >> button >> nth=2'); // pot
@@ -158,7 +167,7 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await late.page.goto(`${base}join/${code}`);
     await late.page.waitForSelector('.note');
     await late.page.fill('.field input', 'Lena');
-    await late.page.click('.seat-card.free >> nth=0');
+    await late.page.click('.ring-free >> nth=0'); // first free seat after renumbering: 3
     await late.page.waitForSelector('text=Waiting for the host');
     await host.page.click('.banner >> text=Review');
     await shot(host.page, 'late-join-approve');
@@ -166,10 +175,12 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await late.page.waitForSelector('.table-felt');
     await host.page.waitForSelector('text=Lena');
 
-    // Guest reloads: reconnects to the same seat with the stored token.
+    // Guest reloads: reconnects to the renumbered seat with the stored token.
     await guest.page.reload();
     await guest.page.waitForSelector('.table-felt');
     expect(await guest.page.locator('.seat-me .seat-name').innerText()).toBe('Guy');
+    expect(await guest.page.locator('.seat-me .seat-no').innerText()).toBe('2');
+    expect(await late.page.locator('.seat-me .seat-no').innerText()).toBe('3');
     await host.page.click('text=Next hand');
     // Hand 2 has three players: the late joiner is dealt in.
     await late.page.waitForSelector('.seat-me');
@@ -181,4 +192,65 @@ describe.skipIf(!enabled)('browser end-to-end', () => {
     await host.ctx.close();
     await guest.ctx.close();
   }, 90_000);
+
+  it('circular seat layout: no overlap or overflow at every table size, on phones and desktop', async () => {
+    const viewports = [
+      { name: 'phone', width: 390, height: 844, mobile: true },
+      { name: 'small-phone', width: 320, height: 640, mobile: true },
+      { name: 'desktop', width: 1280, height: 800, mobile: false },
+    ];
+    const LONG = 'Maximiliane-Annabel'; // close to the 20-character nickname limit
+    for (let max = 2; max <= 10; max++) {
+      const res = await fetch(`${base}api/rooms`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ game: 'texas-holdem', settings: { maxPlayers: max }, nickname: LONG }),
+      });
+      const { roomId } = (await res.json()) as { roomId: string };
+      for (const vp of viewports) {
+        for (const lang of ['en', 'de']) {
+          const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.mobile ? 2 : 1, isMobile: vp.mobile, hasTouch: vp.mobile });
+          await ctx.addInitScript((l) => localStorage.setItem('fc.lang', l), lang);
+          const page = await ctx.newPage();
+          page.on('pageerror', (e) => {
+            throw e;
+          });
+          await page.goto(`${base}join/${roomId}`);
+          await page.waitForSelector('.seat-ring .ring-slot');
+          const report = await page.evaluate(() => {
+            const ring = document.querySelector('.seat-ring')!.getBoundingClientRect();
+            const slots = [...document.querySelectorAll<HTMLElement>('.ring-slot')].map((el) => el.getBoundingClientRect());
+            const overlaps: string[] = [];
+            slots.forEach((a, i) =>
+              slots.forEach((b, j) => {
+                if (j > i && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) overlaps.push(`${i + 1}/${j + 1}`);
+              }),
+            );
+            const outside = slots.filter((r) => r.left < ring.left - 0.5 || r.right > ring.right + 0.5 || r.top < ring.top - 0.5 || r.bottom > ring.bottom + 0.5).length;
+            const offscreen = slots.filter((r) => r.left < 0 || r.right > window.innerWidth).length;
+            // Text must fit its card (nicknames are ellipsised, labels wrap to two lines).
+            const overflow = [...document.querySelectorAll<HTMLElement>('.ring-seat')].filter(
+              (el) => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1,
+            ).length;
+            const small = [...document.querySelectorAll<HTMLElement>('button.ring-seat')].filter((el) => {
+              const r = el.getBoundingClientRect();
+              return r.width < 44 || r.height < 44;
+            }).length;
+            const pageOverflow = document.documentElement.scrollWidth > window.innerWidth;
+            return { count: slots.length, overlaps, outside, offscreen, overflow, small, pageOverflow };
+          });
+          const where = `${max} seats, ${vp.name}, ${lang}`;
+          expect(report.count, where).toBe(max);
+          expect(report.overlaps, where).toEqual([]);
+          expect(report.outside, where).toBe(0);
+          expect(report.offscreen, where).toBe(0);
+          expect(report.overflow, where).toBe(0);
+          expect(report.small, where).toBe(0);
+          expect(report.pageOverflow, where).toBe(false);
+          if (lang === 'en') await shot(page, `seats-${vp.name}-${max}`);
+          await ctx.close();
+        }
+      }
+    }
+  }, 240_000);
 });

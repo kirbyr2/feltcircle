@@ -94,6 +94,14 @@
   "join.requested": "リクエスト中",
   "join.requestSent": "シート {seat} をリクエストしました。ホストの承認を待っています…",
   "join.requestHint": "ホストが承認するとすぐに着席します。",
+  "join.tableLabel": "テーブルの席",
+  "join.sitAria": "シート {seat} に座る",
+  "join.requestAria": "シート {seat} をホストにリクエスト",
+  "join.takeOverAria": "シート {seat}（{name}）を引き継ぐ",
+  "join.seatTaken": "シート {seat}：{name}",
+  "join.joining": "参加中…",
+  "join.yourSeat": "あなたの席",
+  "join.reclaim": "引き継ぐ",
 
   "lobby.title": "待合室",
   "lobby.roomCode": "ルームコード",
@@ -109,6 +117,8 @@
   "lobby.remove": "外す",
   "lobby.settings": "テーブル設定",
   "lobby.importStaged": "ゲーム開始時にインポートしたチップを使用します。",
+  "lobby.renumberNote": "ゲーム開始時に、時計回りの順番を保ったまま席番号が詰められます。",
+  "lobby.manageSeat": "シート {seat}：{name}。タップして管理",
 
   "street.preflop": "プリフロップ",
   "street.flop": "フロップ",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} が勝利を宣言",
   "roomlog.claimWithdrawn": "{name} が宣言を取り消し",
   "roomlog.mucked": "{name} がマック",
+  "roomlog.seatsRenumbered": "ゲーム用に席番号を詰めました",
 
   "error.NO_HAND": "進行中のハンドはありません。",
   "error.HAND_IN_PROGRESS": "先に現在のハンドを終えてください。",

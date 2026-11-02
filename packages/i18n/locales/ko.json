@@ -94,6 +94,14 @@
   "join.requested": "요청됨",
   "join.requestSent": "{seat}번 좌석을 요청했습니다. 호스트의 승인을 기다리는 중…",
   "join.requestHint": "호스트가 승인하면 바로 착석합니다.",
+  "join.tableLabel": "테이블 좌석",
+  "join.sitAria": "{seat}번 좌석에 앉기",
+  "join.requestAria": "호스트에게 {seat}번 좌석 요청",
+  "join.takeOverAria": "{seat}번 좌석({name}) 이어받기",
+  "join.seatTaken": "{seat}번 좌석: {name}",
+  "join.joining": "참가 중…",
+  "join.yourSeat": "내 좌석",
+  "join.reclaim": "되찾기",
 
   "lobby.title": "대기실",
   "lobby.roomCode": "방 코드",
@@ -109,6 +117,8 @@
   "lobby.remove": "내보내기",
   "lobby.settings": "테이블 설정",
   "lobby.importStaged": "게임이 시작되면 가져온 칩을 사용합니다.",
+  "lobby.renumberNote": "게임을 시작하면 시계 방향 순서를 유지한 채 좌석 번호가 빈칸 없이 다시 매겨집니다.",
+  "lobby.manageSeat": "{seat}번 좌석: {name}. 눌러서 관리",
 
   "street.preflop": "프리플랍",
   "street.flop": "플랍",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} 님이 승리를 선언했습니다",
   "roomlog.claimWithdrawn": "{name} 님이 선언을 취소했습니다",
   "roomlog.mucked": "{name} 님이 머크했습니다",
+  "roomlog.seatsRenumbered": "게임을 위해 좌석 번호를 다시 매겼습니다",
 
   "error.NO_HAND": "진행 중인 핸드가 없습니다.",
   "error.HAND_IN_PROGRESS": "현재 핸드를 먼저 끝내세요.",

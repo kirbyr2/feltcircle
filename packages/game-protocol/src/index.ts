@@ -141,6 +141,12 @@ export interface RoomView {
   /** The viewer's own pending pre-action (other players' pre-actions are private). */
   myPreAction: PreAction | null;
   canUndo: boolean;
+  /**
+   * The seat this view was rendered for (null for spectators/unseated clients
+   * and Local Mode). Seats are renumbered once when the game starts, so clients
+   * take their own seat number from here rather than remembering it.
+   */
+  viewerSeat?: number | null;
   pendingImport: SeatChips | null;
   /** Late-join requests waiting for the host (online, after the game started). */
   joinRequests: JoinRequestView[];

@@ -94,6 +94,14 @@
   "join.requested": "Pedido",
   "join.requestSent": "Assento {seat} pedido. Aguardando o anfitrião…",
   "join.requestHint": "Você se senta assim que o anfitrião aprovar.",
+  "join.tableLabel": "Assentos da mesa",
+  "join.sitAria": "Sentar no assento {seat}",
+  "join.requestAria": "Pedir ao anfitrião o assento {seat}",
+  "join.takeOverAria": "Assumir o assento {seat} ({name})",
+  "join.seatTaken": "Assento {seat}: {name}",
+  "join.joining": "Entrando…",
+  "join.yourSeat": "Seu assento",
+  "join.reclaim": "Retomar",
 
   "lobby.title": "Sala de espera",
   "lobby.roomCode": "Código da sala",
@@ -109,6 +117,8 @@
   "lobby.remove": "Remover",
   "lobby.settings": "Configurações da mesa",
   "lobby.importStaged": "As fichas importadas serão usadas quando o jogo começar.",
+  "lobby.renumberNote": "Quando o jogo começa, os assentos são renumerados sem lacunas, mantendo a ordem no sentido horário.",
+  "lobby.manageSeat": "Assento {seat}: {name}. Toque para gerenciar",
 
   "street.preflop": "Pré-flop",
   "street.flop": "Flop",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} reivindica a vitória",
   "roomlog.claimWithdrawn": "{name} retirou a reivindicação",
   "roomlog.mucked": "{name} descartou",
+  "roomlog.seatsRenumbered": "Assentos renumerados sem lacunas para o jogo",
 
   "error.NO_HAND": "Nenhuma mão em andamento.",
   "error.HAND_IN_PROGRESS": "Termine a mão atual primeiro.",

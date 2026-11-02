@@ -226,8 +226,19 @@ export class RoomRuntime {
       await this.destroy('host');
       return;
     }
+    if (r.seatMap) this.rebindSeats(r.seatMap);
     this.send(conn, { t: 'ack', id: msg.id, ok: true, version: r.state.version });
     await this.commit(r.state);
+  }
+
+  /**
+   * Seats were renumbered (game start): move every live connection to its
+   * player's new seat so turn checks, views and disconnect tracking follow the
+   * player. Clients learn their new number from `viewerSeat` in the next state.
+   */
+  private rebindSeats(map: Record<number, number>) {
+    const bound = this.host.connections().map((c) => [c, c.getSeat()] as const);
+    for (const [c, seat] of bound) if (seat !== null && map[seat] !== undefined && map[seat] !== seat) c.setSeat(map[seat]);
   }
 
   async onClose(conn: Connection): Promise<void> {

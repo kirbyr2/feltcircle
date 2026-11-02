@@ -858,23 +858,6 @@ textarea.code,
   justify-content: center;
 }
 
-.seat-empty {
-  width: 30px;
-  min-height: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border-style: dashed;
-  opacity: 0.45;
-  padding: 0;
-  justify-content: center;
-}
-
-.seat-empty .seat-no {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-}
-
 .seat-active {
   border-color: var(--gold);
   box-shadow: 0 0 0 2px var(--gold), 0 0 24px rgba(214, 178, 94, 0.55);
@@ -1168,8 +1151,7 @@ textarea.code,
 .standings,
 .history,
 .help,
-.player-list,
-.lobby-seats {
+.player-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1191,7 +1173,6 @@ textarea.code,
 }
 
 .standings li,
-.lobby-seats li,
 .player-list li {
   display: flex;
   align-items: center;
@@ -1217,11 +1198,6 @@ textarea.code,
 .player-actions {
   display: flex;
   gap: 0.3rem;
-}
-
-.lobby-seats li.empty {
-  opacity: 0.5;
-  border-style: dashed;
 }
 
 .finished {
@@ -1257,31 +1233,6 @@ textarea.code,
   border-radius: 12px;
   border: 4px solid var(--gold-lo);
   background: #f4e6b8;
-}
-
-.seat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.5rem;
-}
-
-.seat-card {
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  padding: 0.7rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 92px;
-  justify-content: center;
-}
-
-.seat-card.free {
-  cursor: pointer;
-  border-color: var(--gold-lo);
-  color: var(--gold-hi);
 }
 
 .preview {
@@ -1566,4 +1517,198 @@ details.advanced[open] > summary::before {
   width: 1.25em;
   height: 1.25em;
   display: block;
+}
+
+/* ------------------------------------------------------------------ seat ring
+ * Choose-your-seat and waiting-room table: seats evenly spaced around an oval,
+ * seat 1 at the top, clockwise. Seat centres come from ringPosition() in
+ * SeatRing.tsx (50% ± 38% of the width, 50% ± 40% of the height).
+ *
+ * Cards are 70px tall and 20% of the ring wide (60–96px). With these sizes,
+ * neighbouring seats keep ≥ 4px of clearance and stay inside the ring for
+ * every table size from 2 to 10 seats, at every ring width from 288px
+ * (a 320px phone) to 528px in portrait (10:16) and 420–528px in the square
+ * layout used on wide screens. Re-check both if any of these numbers change.
+ */
+
+.seat-ring {
+  --seat-w: clamp(60px, 20%, 96px);
+  --seat-h: 70px;
+  position: relative;
+  width: 100%;
+  min-width: 288px;
+  max-width: 528px;
+  aspect-ratio: 10 / 16;
+  margin: 0.4rem auto;
+}
+
+@media (min-width: 640px) and (min-aspect-ratio: 1/1) {
+  .seat-ring {
+    aspect-ratio: 1 / 1;
+    width: min(528px, calc(100vh - 220px));
+    min-width: 420px;
+  }
+}
+
+.seat-ring-felt {
+  position: absolute;
+  inset: 17% 20%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 40%, var(--felt-hi), var(--felt) 55%, var(--felt-lo));
+  box-shadow:
+    0 0 0 2px var(--gold-lo),
+    0 0 0 8px #120d06,
+    0 0 0 10px var(--gold-lo),
+    inset 0 0 40px rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 1rem;
+}
+
+.ring-code {
+  font-size: clamp(1.2rem, 6vw, 1.8rem);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  padding-left: 0.2em;
+  color: rgba(241, 217, 143, 0.35);
+}
+
+.ring-slot {
+  position: absolute;
+  width: var(--seat-w);
+  height: var(--seat-h);
+  transform: translate(-50%, -50%);
+  display: flex;
+}
+
+.ring-seat {
+  appearance: none;
+  font: inherit;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 5px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--panel-2), var(--bg-2));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+button.ring-seat {
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+button.ring-seat:not(:disabled):hover {
+  border-color: var(--gold);
+}
+
+button.ring-seat:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+button.ring-seat:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ring-seat:focus-visible {
+  outline: 3px solid var(--gold-hi);
+  outline-offset: 2px;
+}
+
+.ring-free {
+  border: 1px dashed var(--gold-lo);
+  color: var(--gold-hi);
+  background: rgba(214, 178, 94, 0.06);
+}
+
+.ring-joining {
+  border-style: solid;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 18px rgba(214, 178, 94, 0.45);
+}
+
+.ring-empty {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.ring-host {
+  border-color: var(--gold-lo);
+}
+
+.ring-me {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 22px rgba(214, 178, 94, 0.4);
+}
+
+.ring-reclaim {
+  border: 1px dashed var(--warn);
+}
+
+.ring-top {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ring-name {
+  max-width: 100%;
+  font-weight: 700;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ring-label,
+.ring-sub {
+  max-width: 100%;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.ring-sub {
+  color: var(--muted);
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.ring-me .ring-sub,
+.ring-reclaim .ring-sub {
+  color: var(--gold-hi);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

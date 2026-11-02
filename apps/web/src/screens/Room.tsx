@@ -9,6 +9,7 @@ import { GameProvider, useGame } from '../components/game-context';
 import { Brand, LanguageSelect, Modal, NumberField, Spinner, useToast } from '../components/ui';
 import { ImportDialog } from '../components/ChipDialogs';
 import { Advanced, BlindFields, blindsValid, ProgressionFields, type BlindValues } from '../components/Dialogs';
+import { SeatRing } from '../components/SeatRing';
 import { ConnectionBadge, GameScreen } from './GameScreen';
 
 const sessions = new Map<string, ServerSession>();
@@ -100,19 +101,31 @@ function RoomContent({ setRoomDefault }: { setRoomDefault: (l: string | null) =>
   return <GameScreen />;
 }
 
-function SeatPicker() {
+export function SeatPicker() {
   const { room, session, name, snap } = useGame();
   const { t } = useI18n();
   const toast = useToast();
   const [nickname, setNickname] = useState('');
-  const [busy, setBusy] = useState(false);
+  // Seat being joined; also blocks duplicate submissions until the server answers.
+  const [joining, setJoining] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const lobby = room.status === 'lobby';
   const rejected = snap.lastError?.code === 'JOIN_REJECTED';
+  const online = snap.connection === 'online';
   const join = async (seat: number, takeover: boolean) => {
-    setBusy(true);
-    const r = await (session as ServerSession).join(seat, nickname, takeover);
-    setBusy(false);
-    if (!r.ok && r.error) toast(t(`error.${r.error}`), 'error');
+    if (joining !== null) return;
+    setJoining(seat);
+    setError(null);
+    try {
+      const r = await (session as ServerSession).join(seat, nickname, takeover);
+      if (!r.ok) {
+        const msg = t(`error.${r.error ?? 'INTERNAL'}`);
+        setError(msg);
+        toast(msg, 'error');
+      }
+    } finally {
+      setJoining(null);
+    }
   };
   const seats = Array.from({ length: room.settings.maxPlayers }, (_, i) => i + 1);
   if (snap.pendingSeat !== null) {
@@ -150,36 +163,85 @@ function SeatPicker() {
         <span>{t('join.nickname')}</span>
         <input maxLength={20} value={nickname} onChange={(e) => setNickname(e.target.value)} />
       </label>
-      <div className="seat-grid">
-        {seats.map((seat) => {
+      <SeatRing
+        seats={seats}
+        label={t('join.tableLabel')}
+        center={<span className="ring-code">{room.id}</span>}
+        renderSeat={(seat) => {
           const s = room.seats.find((x) => x.seat === seat);
-          const requested = room.joinRequests.some((x) => x.seat === seat);
-          if (!s)
+          const isJoining = joining === seat;
+          if (!s) {
+            const requested = room.joinRequests.some((x) => x.seat === seat);
+            const label = isJoining ? t('join.joining') : requested ? t('join.requested') : lobby ? t('join.sit') : t('join.request');
             return (
-              <button key={seat} className="seat-card free" disabled={requested || busy || snap.connection !== 'online'} onClick={() => join(seat, false)}>
+              <button
+                className={`ring-seat ring-free ${isJoining ? 'ring-joining' : ''}`}
+                disabled={requested || joining !== null || !online}
+                aria-busy={isJoining || undefined}
+                aria-label={`${lobby ? t('join.sitAria', { seat }) : t('join.requestAria', { seat })}${requested ? ` (${t('join.requested')})` : ''}`}
+                onClick={() => join(seat, false)}
+              >
                 <span className="seat-no">{seat}</span>
-                <span>{requested ? t('join.requested') : lobby ? t('join.sit') : t('join.request')}</span>
+                <span className="ring-label">{label}</span>
               </button>
             );
+          }
+          const host = room.hostSeat === seat;
+          const marks = (
+            <>
+              <span className="ring-top">
+                <span className="seat-no">{seat}</span>
+                {host && (
+                  <span className="tag tag-host" title={t('common.host')}>
+                    <span aria-hidden>★</span>
+                    <span className="sr-only">{t('common.host')}</span>
+                  </span>
+                )}
+              </span>
+              <span className="ring-name">{name(seat)}</span>
+            </>
+          );
+          if (!s.connected) {
+            // Reclaim your own seat (e.g. after switching phones): only while it has no live connection.
+            return (
+              <button
+                className={`ring-seat ring-reclaim ${host ? 'ring-host' : ''}`}
+                disabled={joining !== null || !online}
+                aria-busy={isJoining || undefined}
+                aria-label={`${t('join.takeOverAria', { seat, name: name(seat) })}${host ? `, ${t('common.host')}` : ''}`}
+                title={t('join.takeOverHint')}
+                onClick={() => join(seat, true)}
+              >
+                {marks}
+                <span className="ring-sub">{isJoining ? t('join.joining') : `↺ ${t('join.reclaim')}`}</span>
+              </button>
+            );
+          }
           return (
-            <div key={seat} className="seat-card taken">
-              <span className="seat-no">{seat}</span>
-              <b>{name(seat)}</b>
-              {!s.connected ? (
-                <button className="btn btn-small" disabled={busy} onClick={() => join(seat, true)} title={t('join.takeOverHint')}>
-                  {t('join.takeOver')}
-                </button>
-              ) : (
-                <span className="muted small">●</span>
-              )}
+            <div className={`ring-seat ring-taken ${host ? 'ring-host' : ''}`}>
+              {marks}
+              <span className="ring-sub">
+                <span className="dot on" aria-hidden /> {t('conn.online')}
+              </span>
             </div>
           );
-        })}
-      </div>
+        }}
+      />
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
+      {lobby && <p className="muted small">{t('lobby.renumberNote')}</p>}
       <p className="muted small">{t('join.takeOverHint')}</p>
       <LanguageSelect />
     </div>
   );
+}
+
+/** True when the occupied seats are not 1…n (they will be renumbered when the game starts). */
+function hasGaps(occupied: number[]): boolean {
+  return occupied.some((seat, i) => seat !== i + 1);
 }
 
 function Qr({ text }: { text: string }) {
@@ -196,6 +258,7 @@ function Lobby() {
   const toast = useToast();
   const [dialog, setDialog] = useState<null | 'settings' | 'import' | 'nick'>(null);
   const [dealer, setDealer] = useState<number | null>(null);
+  const [manage, setManage] = useState<number | null>(null);
   const url = inviteUrl(room.id, getServerOverride());
   const count = room.seats.length;
   const share = async () => {
@@ -243,29 +306,53 @@ function Lobby() {
         <b>{t('lobby.players', { count, max: room.settings.maxPlayers })}</b>
         <span className="muted small">{t('lobby.available', { n: room.settings.maxPlayers - count })}</span>
       </div>
-      <ul className="lobby-seats">
-        {Array.from({ length: room.settings.maxPlayers }, (_, i) => i + 1).map((seat) => {
+      <SeatRing
+        seats={Array.from({ length: room.settings.maxPlayers }, (_, i) => i + 1)}
+        label={t('join.tableLabel')}
+        center={<span className="ring-code">{room.id}</span>}
+        renderSeat={(seat) => {
           const s = room.seats.find((x) => x.seat === seat);
-          return (
-            <li key={seat} className={s ? '' : 'empty'}>
-              <span className="seat-no">{seat}</span>
-              <span className="grow">
-                {s ? name(seat) : t('join.free')}
-                {seat === mySeat && <span className="muted"> ({t('common.you')})</span>}
+          if (!s)
+            return (
+              <div className="ring-seat ring-empty">
+                <span className="seat-no">{seat}</span>
+                <span className="ring-label">{t('join.free')}</span>
+              </div>
+            );
+          const hostSeat = room.hostSeat === seat;
+          const me = seat === mySeat;
+          const status = s.connected ? t('conn.online') : t('common.offline');
+          const content = (
+            <>
+              <span className="ring-top">
+                <span className="seat-no">{seat}</span>
+                {hostSeat && (
+                  <span className="tag tag-host" title={t('common.host')}>
+                    <span aria-hidden>★</span>
+                    <span className="sr-only">{t('common.host')}</span>
+                  </span>
+                )}
               </span>
-              {s && room.hostSeat === seat && <span className="tag tag-host">{t('common.host')}</span>}
-              {s && <span className={`dot ${s.connected ? 'on' : 'off'}`} title={s.connected ? t('conn.online') : t('common.offline')} />}
-              {room.pendingImport && s && <span className="num muted small">{n(room.pendingImport[seat] ?? 0)}</span>}
-              {isHost && s && seat !== room.hostSeat && (
-                <button className="btn btn-small" onClick={() => send({ type: 'host:removeSeat', seat })}>
-                  {t('lobby.remove')}
-                </button>
-              )}
-            </li>
+              <span className="ring-name">{name(seat)}</span>
+              <span className="ring-sub">
+                <span className={`dot ${s.connected ? 'on' : 'off'}`} title={status} aria-hidden />{' '}
+                {room.pendingImport ? <span className="num">{n(room.pendingImport[seat] ?? 0)}</span> : me ? t('join.yourSeat') : status}
+                {(room.pendingImport || me) && <span className="sr-only">, {me ? `${t('join.yourSeat')}, ` : ''}{status}</span>}
+              </span>
+            </>
           );
-        })}
-      </ul>
+          const classes = `ring-seat ring-taken ${hostSeat ? 'ring-host' : ''} ${me ? 'ring-me' : ''}`;
+          if (isHost && !hostSeat)
+            return (
+              <button className={classes} aria-label={`${t('lobby.manageSeat', { seat, name: name(seat) })}, ${status}`} onClick={() => setManage(seat)}>
+                {content}
+              </button>
+            );
+          return <div className={classes}>{content}</div>;
+        }}
+      />
       {room.pendingImport && <p className="note small">{t('lobby.importStaged')}</p>}
+      {hasGaps(room.seats.map((x) => x.seat)) && <p className="muted small">{t('lobby.renumberNote')}</p>}
       {!isHost && (!host || !host.connected) && (
         <div className="banner">
           <span>{t('host.claimHint')}</span>
@@ -318,6 +405,24 @@ function Lobby() {
         </button>
       )}
       <LanguageSelect />
+      {manage !== null && room.seats.some((x) => x.seat === manage) && (
+        <Modal title={t('join.seatTaken', { seat: manage, name: name(manage) })} onClose={() => setManage(null)}>
+          <div className="row gap">
+            <button className="btn" onClick={() => setManage(null)}>
+              {t('common.cancel')}
+            </button>
+            <button
+              className="btn btn-danger"
+              disabled={!canSend}
+              onClick={async () => {
+                if (await send({ type: 'host:removeSeat', seat: manage })) setManage(null);
+              }}
+            >
+              {t('lobby.remove')}
+            </button>
+          </div>
+        </Modal>
+      )}
       {dialog === 'settings' && <LobbySettings onClose={() => setDialog(null)} />}
       {dialog === 'nick' && <NicknameDialog onClose={() => setDialog(null)} />}
       {dialog === 'import' && (

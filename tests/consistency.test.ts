@@ -217,3 +217,127 @@ describe('backend consistency', () => {
     }
   });
 });
+
+/**
+ * Sparse waiting room: host on seat 1, guests on seats 3 and 5, dealer chosen
+ * on seat 5. Every backend must renumber to 1, 2, 3 at the start (dealer → 3)
+ * and then play the same hand: D=3, SB=1, BB=2, seat 3 first to act.
+ */
+const SPARSE_PLAYERS: Array<[number, string]> = [
+  [1, 'Host'],
+  [3, 'Mia'],
+  [5, 'Noa'],
+];
+const SPARSE_START: Command = { type: 'host:start', dealerSeat: 5 };
+const SPARSE_SCRIPT: Array<[number, Command]> = [
+  [3, { type: 'act', action: { type: 'raise', amount: 60 } }],
+  [1, { type: 'act', action: { type: 'fold' } }],
+  [2, { type: 'act', action: { type: 'call' } }],
+  [1, { type: 'host:advance' }],
+  [2, { type: 'act', action: { type: 'check' } }],
+  [3, { type: 'act', action: { type: 'check' } }],
+  [1, { type: 'host:advance' }],
+  [2, { type: 'act', action: { type: 'check' } }],
+  [3, { type: 'act', action: { type: 'check' } }],
+  [1, { type: 'host:advance' }],
+  [2, { type: 'act', action: { type: 'check' } }],
+  [3, { type: 'act', action: { type: 'check' } }],
+  [1, { type: 'host:award', winners: [[3]] }],
+];
+const SPARSE_TABLE = [
+  [1, 'Host'],
+  [2, 'Mia'],
+  [3, 'Noa'],
+];
+
+function runSparseLocal() {
+  let s: RoomState = createLocalRoom({ players: SPARSE_PLAYERS.map(([seat, nickname]) => ({ seat, nickname })), now: 0 });
+  for (const [seat, cmd] of [[1, SPARSE_START] as [number, Command], ...SPARSE_SCRIPT]) {
+    const c = PER_SEAT.has(cmd.type) ? ({ ...cmd, seat } as Command) : cmd;
+    const r = applyCommand(s, { seat: null, local: true }, c, 0);
+    if (!r.ok) throw new Error(`local ${cmd.type}: ${r.error}`);
+    s = r.state;
+  }
+  return { game: s.game, table: Object.values(s.seats).map((x) => [x.seat, x.nickname]) };
+}
+
+async function runSparseNode() {
+  const base = `http://127.0.0.1:${server.port}`;
+  const created = await createRoomRequest(base, { settings: { maxPlayers: 6 }, nickname: 'Host' });
+  if (!created.ok) throw new Error(created.error);
+  const id = created.room.roomId;
+  const t1 = new MemoryTokens();
+  t1.set(id, created.room.token);
+  const c = [client(base, id, t1), client(base, id), client(base, id)];
+  await waitFor(() => c.every((x) => x.session.getSnapshot().connection === 'online'));
+  expect((await c[1].session.join(3, 'Mia')).ok).toBe(true);
+  expect((await c[2].session.join(5, 'Noa')).ok).toBe(true);
+  expect((await c[0].session.send(SPARSE_START)).ok).toBe(true);
+  await waitFor(() => c[1].session.getSnapshot().mySeat === 2 && c[2].session.getSnapshot().mySeat === 3, 5000, 'renumbered');
+  // Clients are indexed by their in-game seat from here on.
+  for (const [seat, cmd] of SPARSE_SCRIPT) {
+    const r = await c[seat - 1].session.send(cmd);
+    if (!r.ok) throw new Error(`node ${cmd.type}: ${r.error}`);
+  }
+  await waitFor(() => c.every((x) => x.session.getSnapshot().room?.game?.hand?.phase === 'complete'), 5000, 'hand complete');
+  const views = c.map((x) => x.session.getSnapshot().room!);
+  for (const v of views) expect(v.seats.map((x) => [x.seat, x.nickname])).toEqual(SPARSE_TABLE);
+  const game = views[0].game;
+  for (const x of c) x.session.dispose();
+  return { game, table: views[0].seats.map((x) => [x.seat, x.nickname]) };
+}
+
+async function runSparseCloudflare() {
+  const ctx = new FakeCtx();
+  let dobj = new RoomDurableObject(ctx as never, {} as never);
+  const settings = { maxPlayers: 6, startingChips: 2000, sb: 10, bb: 20, progression: 'hybrid', levelMinutes: 15, defaultLanguage: 'en' };
+  const res = await dobj.fetch(
+    new Request('https://room/internal/create', { method: 'POST', body: JSON.stringify({ id: 'CFSPR', game: 'texas-holdem', settings, nickname: 'Host', token: 'hosttoken' }) }),
+  );
+  expect(res.status).toBe(201);
+  const sockets = [new FakeSocket(), new FakeSocket(), new FakeSocket()];
+  for (const ws of sockets) dobj.accept(ws as never);
+  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: 1, token: 'hosttoken' }));
+  await dobj.webSocketMessage(sockets[1] as never, JSON.stringify({ t: 'join', seat: 3, nickname: 'Mia' }));
+  await dobj.webSocketMessage(sockets[2] as never, JSON.stringify({ t: 'join', seat: 5, nickname: 'Noa' }));
+  const miaToken = sockets[1].last('joined').token as string;
+  let n = 0;
+  const send = async (ws: FakeSocket, cmd: Command) => {
+    n++;
+    await dobj.webSocketMessage(ws as never, JSON.stringify({ t: 'cmd', id: `s${n}`, cmd }));
+    const ack = ws.messages().find((m) => m.t === 'ack' && m.id === `s${n}`);
+    if (!ack?.ok) throw new Error(`cf ${cmd.type}: ${ack?.error}`);
+  };
+  await send(sockets[0], SPARSE_START);
+  // The seat binding lives in the socket attachment, so it survives hibernation.
+  expect(sockets.map((ws) => ws.deserializeAttachment())).toEqual([{ seat: 1 }, { seat: 2 }, { seat: 3 }]);
+  expect(sockets.map((ws) => ws.last('state').room.viewerSeat)).toEqual([1, 2, 3]);
+  dobj = new RoomDurableObject(ctx as never, {} as never); // evicted and woken again
+  for (const [seat, cmd] of SPARSE_SCRIPT) await send(sockets[seat - 1], cmd);
+  // Mia reconnects on a new socket with her token and lands on her new seat.
+  const fresh = new FakeSocket();
+  dobj.accept(fresh as never);
+  await dobj.webSocketMessage(fresh as never, JSON.stringify({ t: 'hello', protocolVersion: 1, token: miaToken }));
+  expect(fresh.last('welcome').seat).toBe(2);
+  const state = (await ctx.storage.get<RoomState>('room'))!;
+  const views = sockets.map((ws) => ws.last('state').room);
+  expect(new Set(views.map((v) => v.version)).size).toBe(1);
+  for (const v of views) expect(v.seats.map((x: { seat: number; nickname: string }) => [x.seat, x.nickname])).toEqual(SPARSE_TABLE);
+  return { game: state.game, table: Object.values(state.seats).map((x) => [x.seat, x.nickname]) };
+}
+
+describe('seat renumbering consistency', () => {
+  it('Local Mode, Node.js and Cloudflare renumber sparse seats identically and play the same hand', async () => {
+    const local = runSparseLocal();
+    const node = await runSparseNode();
+    const cf = await runSparseCloudflare();
+    expect(local.table).toEqual(SPARSE_TABLE);
+    expect(local.game!.firstDealer).toBe(3);
+    // Pot 60 + 60 + 10 (folded small blind) won by seat 3.
+    expect(local.game!.chips).toEqual({ 1: 1990, 2: 1940, 3: 2070 });
+    expect(node.table).toEqual(SPARSE_TABLE);
+    expect(cf.table).toEqual(SPARSE_TABLE);
+    expect(normalize(node.game)).toEqual(normalize(local.game));
+    expect(normalize(cf.game)).toEqual(normalize(local.game));
+  });
+});

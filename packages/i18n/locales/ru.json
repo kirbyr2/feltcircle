@@ -94,6 +94,14 @@
   "join.requested": "Запрошено",
   "join.requestSent": "Место {seat} запрошено. Ждём хоста…",
   "join.requestHint": "Вы сядете, как только хост одобрит запрос.",
+  "join.tableLabel": "Места за столом",
+  "join.sitAria": "Сесть на место {seat}",
+  "join.requestAria": "Попросить у хоста место {seat}",
+  "join.takeOverAria": "Занять место {seat} ({name})",
+  "join.seatTaken": "Место {seat}: {name}",
+  "join.joining": "Подключение…",
+  "join.yourSeat": "Ваше место",
+  "join.reclaim": "Вернуть",
 
   "lobby.title": "Зал ожидания",
   "lobby.roomCode": "Код комнаты",
@@ -109,6 +117,8 @@
   "lobby.remove": "Убрать",
   "lobby.settings": "Настройки стола",
   "lobby.importStaged": "Импортированные фишки будут использованы при начале игры.",
+  "lobby.renumberNote": "При старте игры места перенумеровываются без пропусков, порядок по часовой стрелке сохраняется.",
+  "lobby.manageSeat": "Место {seat}: {name}. Нажмите для управления",
 
   "street.preflop": "Префлоп",
   "street.flop": "Флоп",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} заявляет победу",
   "roomlog.claimWithdrawn": "{name} отозвал заявку",
   "roomlog.mucked": "{name} сбросил карты",
+  "roomlog.seatsRenumbered": "Места перенумерованы без пропусков для игры",
 
   "error.NO_HAND": "Сейчас нет раздачи.",
   "error.HAND_IN_PROGRESS": "Сначала завершите текущую раздачу.",

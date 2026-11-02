@@ -23,7 +23,19 @@ jobs:
       # Build first so the browser end-to-end tests can serve the real web app.
       - run: npm run build
       # ubuntu-latest ships Google Chrome, so tests/e2e.test.ts runs here too.
+      # Its screenshots (incl. the seat layout at every table size, phone and
+      # desktop) are uploaded as the "e2e-screenshots" artifact for review.
       - run: npm test
+        env:
+          E2E_SHOTS: ${{ runner.temp }}/e2e-shots
+      - name: Upload end-to-end screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: ${{ runner.temp }}/e2e-shots
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Validate Cloudflare Worker bundle
         run: npx wrangler deploy --dry-run --outdir /tmp/cf-dist
         working-directory: apps/server-cloudflare

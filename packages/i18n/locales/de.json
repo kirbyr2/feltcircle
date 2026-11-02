@@ -94,6 +94,14 @@
   "join.requested": "Angefragt",
   "join.requestSent": "Platz {seat} angefragt. Warte auf den Host…",
   "join.requestHint": "Du sitzt, sobald der Host zustimmt.",
+  "join.tableLabel": "Plätze am Tisch",
+  "join.sitAria": "Auf Platz {seat} setzen",
+  "join.requestAria": "Platz {seat} beim Host anfragen",
+  "join.takeOverAria": "Platz {seat} übernehmen ({name})",
+  "join.seatTaken": "Platz {seat}: {name}",
+  "join.joining": "Wird beigetreten…",
+  "join.yourSeat": "Dein Platz",
+  "join.reclaim": "Übernehmen",
 
   "lobby.title": "Warteraum",
   "lobby.roomCode": "Raumcode",
@@ -109,6 +117,8 @@
   "lobby.remove": "Entfernen",
   "lobby.settings": "Tischeinstellungen",
   "lobby.importStaged": "Die importierten Chips werden beim Spielstart verwendet.",
+  "lobby.renumberNote": "Beim Spielstart werden die Plätze lückenlos neu nummeriert; die Reihenfolge im Uhrzeigersinn bleibt erhalten.",
+  "lobby.manageSeat": "Platz {seat}: {name}. Zum Verwalten tippen",
 
   "street.preflop": "Preflop",
   "street.flop": "Flop",
@@ -321,6 +331,7 @@
   "roomlog.claimed": "{name} beansprucht den Sieg",
   "roomlog.claimWithdrawn": "{name} hat den Anspruch zurückgezogen",
   "roomlog.mucked": "{name} hat gemuckt",
+  "roomlog.seatsRenumbered": "Plätze für das Spiel lückenlos neu nummeriert",
 
   "error.NO_HAND": "Es läuft keine Hand.",
   "error.HAND_IN_PROGRESS": "Beende zuerst die aktuelle Hand.",

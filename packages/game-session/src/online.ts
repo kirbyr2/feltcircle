@@ -220,6 +220,9 @@ export class ServerSession implements GameSession {
   private acceptRoom(room: RoomView) {
     const cur = this.snapshot.room;
     if (cur && cur.id === room.id && room.version < cur.version && this.snapshot.connection === 'online') return;
+    // The server says which seat this connection holds. It changes when the
+    // host starts the game and the seats are renumbered (older servers omit it).
+    const seat = room.viewerSeat !== undefined ? { mySeat: room.viewerSeat } : {};
     const pendingSeat = this.snapshot.pendingSeat;
     if (pendingSeat !== null && !room.joinRequests.some((r) => r.seat === pendingSeat)) {
       if (room.seats.some((s) => s.seat === pendingSeat)) {
@@ -232,7 +235,7 @@ export class ServerSession implements GameSession {
       }
       return;
     }
-    this.update({ room });
+    this.update({ room, ...seat });
   }
 
   private onServerMessage(msg: ServerMessage) {
