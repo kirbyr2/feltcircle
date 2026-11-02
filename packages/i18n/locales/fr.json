@@ -174,6 +174,12 @@
   "pre.fold": "Se coucher",
   "pre.checkfold": "Parole / Coucher",
   "pre.callany": "Suivre tout",
+  "pre.check": "Parole",
+  "pre.hint.fold": "Se couche quand votre tour arrive.",
+  "pre.hint.checkfold": "Parole si personne ne mise, sinon se couche.",
+  "pre.hint.check": "Parole si personne ne mise. Si quelqu’un mise, vous choisissez.",
+  "pre.hint.callany": "Parole si personne ne mise, sinon suit n’importe quel montant, jusqu’à tous vos jetons restants.",
+  "pre.checkCanceled": "Parole automatique annulée. Choisissez votre action.",
   "pre.clear": "Effacer",
   "pre.selected": "Présélection : {name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "Votre langue",
   "settings.languageNote": "Ne modifie que votre propre écran.",
   "settings.title": "Paramètres",
+  "settings.build": "Build",
 
   "help.1": "Distribuez et montrez de vraies cartes comme d’habitude. FeltCircle remplace seulement les jetons.",
   "help.2": "Les blindes sont payées automatiquement et le joueur qui doit parler est mis en évidence.",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "Non connecté au serveur.",
   "error.UNSUPPORTED_GAME": "Ce jeu n'est pas encore disponible.",
   "error.NOT_ELIGIBLE": "Vous ne participez à aucun pot.",
+  "error.PRE_ACTION_UNAVAILABLE": "Cette présélection n’est plus disponible.",
   "error.JOIN_REJECTED": "L'hôte a refusé votre demande.",
   "error.CANNOT_MUCK": "Vous êtes le dernier joueur d'un pot et ne pouvez pas jeter vos cartes.",
 

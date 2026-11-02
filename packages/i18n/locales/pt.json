@@ -174,6 +174,12 @@
   "pre.fold": "Desistir",
   "pre.checkfold": "Passar / Desistir",
   "pre.callany": "Pagar qualquer",
+  "pre.check": "Passar",
+  "pre.hint.fold": "Desiste quando chegar a sua vez.",
+  "pre.hint.checkfold": "Passa se ninguém apostar; caso contrário, desiste.",
+  "pre.hint.check": "Passa se ninguém apostar. Se alguém apostar, você decide.",
+  "pre.hint.callany": "Passa se ninguém apostar; caso contrário, paga qualquer valor, até todas as suas fichas restantes.",
+  "pre.checkCanceled": "Passe automático cancelado. Escolha sua ação.",
   "pre.clear": "Limpar",
   "pre.selected": "Pré-selecionado: {name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "Seu idioma",
   "settings.languageNote": "Muda apenas a sua própria tela.",
   "settings.title": "Configurações",
+  "settings.build": "Compilação",
 
   "help.1": "Distribuam e mostrem cartas reais como sempre. O FeltCircle só substitui as fichas.",
   "help.2": "Os blinds são pagos automaticamente e o jogador da vez fica destacado.",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "Sem conexão com o servidor.",
   "error.UNSUPPORTED_GAME": "Este jogo ainda não está disponível.",
   "error.NOT_ELIGIBLE": "Você não está em nenhum pote.",
+  "error.PRE_ACTION_UNAVAILABLE": "Essa pré-seleção não está mais disponível.",
   "error.JOIN_REJECTED": "O anfitrião recusou seu pedido.",
   "error.CANNOT_MUCK": "Você é o último jogador em um pote e não pode descartar.",
 

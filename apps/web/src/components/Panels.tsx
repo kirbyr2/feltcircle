@@ -1,41 +1,88 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Confirm } from './ui';
 import type { PreAction } from '@feltcircle/game-protocol';
+import { preActionChoices } from '@feltcircle/poker-engine';
 import { useI18n } from '../lib/i18n';
 import { useGame } from './game-context';
 
-/** Optional pre-actions while waiting (online). Selecting never bets immediately. */
+/** Shown after the server cancelled the player's Check because a call became necessary. */
+export function PreActionNotice() {
+  const { room } = useGame();
+  const { t } = useI18n();
+  if (room.preActionNotice !== 'checkCanceled') return null;
+  return (
+    <div className="pre-notice" role="status">
+      {t('pre.checkCanceled')}
+    </div>
+  );
+}
+
+/**
+ * Optional pre-actions while waiting (online). Selecting never bets
+ * immediately. The options come from the amount actually owed (shared engine
+ * rules): with nothing owed Check/Fold, Check and Call Any (no standalone
+ * Fold); when chips are owed Fold, Check/Fold and Call Any. The server checks
+ * every selection against the authoritative hand.
+ */
 export function PreActions({ seat }: { seat: number }) {
   const { room, send, canSend, name } = useGame();
   const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
   const hand = room.game!.hand!;
-  const me = hand.seats.find((s) => s.seat === seat);
-  if (!me || me.folded || me.allIn) return null;
-  const current = room.myPreAction;
-  const opts: { v: PreAction; label: string }[] = [
-    { v: 'fold', label: t('pre.fold') },
-    { v: 'checkfold', label: t('pre.checkfold') },
-    { v: 'callany', label: t('pre.callany') },
-  ];
+  const choices = preActionChoices(hand, seat);
+  if (choices.length === 0) return null;
+  const current = room.myPreAction && choices.includes(room.myPreAction) ? room.myPreAction : null;
+  const label: Record<PreAction, string> = {
+    fold: t('pre.fold'),
+    checkfold: t('pre.checkfold'),
+    check: t('pre.check'),
+    callany: t('pre.callany'),
+  };
+  const hintFor: PreAction | null = current ?? (choices.includes('callany') ? 'callany' : null);
+  const hintId = `pre-hint-${seat}`;
+  const callanyId = `pre-callany-${seat}`;
+  const choose = async (v: PreAction) => {
+    if (busy) return;
+    setBusy(true);
+    // Tapping the selected option cancels it; any other option replaces it.
+    // `hand` makes the server ignore a selection that arrives after this hand.
+    await send({ type: 'setPreAction', preAction: current === v ? null : v, hand: hand.number });
+    setBusy(false);
+  };
   return (
     <div className="panel">
       <div className="panel-title">
         {hand.phase === 'betting' && hand.toAct !== null ? t('game.toAct', { name: name(hand.toAct) }) : t('street.waitHost')}
       </div>
+      <PreActionNotice />
       <div className="pre-row" role="group" aria-label={t('pre.title')}>
-        {opts.map((o) => (
+        {choices.map((v) => (
           <button
-            key={o.v}
-            className={`btn btn-pre ${current === o.v ? 'on' : ''}`}
-            aria-pressed={current === o.v}
-            disabled={!canSend}
-            onClick={() => send({ type: 'setPreAction', preAction: current === o.v ? null : o.v })}
+            key={v}
+            className={`btn btn-pre ${current === v ? 'on' : ''}`}
+            aria-pressed={current === v}
+            aria-describedby={v === 'callany' ? callanyId : undefined}
+            disabled={!canSend || busy}
+            data-pre={v}
+            onClick={() => void choose(v)}
           >
-            <span className="check-box">{current === o.v ? '✓' : ''}</span>
-            {o.label}
+            <span className="check-box" aria-hidden="true">
+              {current === v ? '✓' : ''}
+            </span>
+            {label[v]}
           </button>
         ))}
       </div>
+      {hintFor && (
+        <p className="pre-hint" id={hintId} aria-live="polite">
+          {t(`pre.hint.${hintFor}`)}
+        </p>
+      )}
+      {choices.includes('callany') && (
+        <span className="sr-only" id={callanyId}>
+          {t('pre.hint.callany')}
+        </span>
+      )}
     </div>
   );
 }

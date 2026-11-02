@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Command } from '@feltcircle/game-protocol';
-import { applyCommand, createLocalRoom, type RoomState } from '@feltcircle/room-core';
+import { PROTOCOL_VERSION, type Command } from '@feltcircle/game-protocol';
+import { applyCommand, connectSeat, createLocalRoom, createOnlineRoom, joinSeat, type RoomState } from '@feltcircle/room-core';
 import { createRoomRequest } from '@feltcircle/game-session';
 import type { TournamentState } from '@feltcircle/poker-engine';
 import { loadConfig } from '../apps/server-node/src/config.js';
@@ -144,7 +144,7 @@ async function runCloudflare() {
   expect((await dobj.fetch(new Request('https://room/internal/create', { method: 'POST', body: '{}' }))).status).toBe(409);
   const sockets = [new FakeSocket(), new FakeSocket(), new FakeSocket(), new FakeSocket()];
   for (const ws of sockets) dobj.accept(ws as never);
-  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: 1, token: 'hosttoken' }));
+  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: 'hosttoken' }));
   await dobj.webSocketMessage(sockets[1] as never, JSON.stringify({ t: 'join', seat: 2, nickname: '' }));
   await dobj.webSocketMessage(sockets[2] as never, JSON.stringify({ t: 'join', seat: 3, nickname: '' }));
   let n = 0;
@@ -160,7 +160,7 @@ async function runCloudflare() {
       const joined = sockets[3].last('joined');
       expect(joined).toMatchObject({ seat: 4, pending: true });
       await send(sockets[0], { type: 'host:approveJoin', seat: 4, chips: 1500 });
-      await dobj.webSocketMessage(sockets[3] as never, JSON.stringify({ t: 'hello', protocolVersion: 1, token: joined.token }));
+      await dobj.webSocketMessage(sockets[3] as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: joined.token }));
       expect(sockets[3].last('welcome').seat).toBe(4);
       continue;
     }
@@ -297,7 +297,7 @@ async function runSparseCloudflare() {
   expect(res.status).toBe(201);
   const sockets = [new FakeSocket(), new FakeSocket(), new FakeSocket()];
   for (const ws of sockets) dobj.accept(ws as never);
-  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: 1, token: 'hosttoken' }));
+  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: 'hosttoken' }));
   await dobj.webSocketMessage(sockets[1] as never, JSON.stringify({ t: 'join', seat: 3, nickname: 'Mia' }));
   await dobj.webSocketMessage(sockets[2] as never, JSON.stringify({ t: 'join', seat: 5, nickname: 'Noa' }));
   const miaToken = sockets[1].last('joined').token as string;
@@ -317,7 +317,7 @@ async function runSparseCloudflare() {
   // Mia reconnects on a new socket with her token and lands on her new seat.
   const fresh = new FakeSocket();
   dobj.accept(fresh as never);
-  await dobj.webSocketMessage(fresh as never, JSON.stringify({ t: 'hello', protocolVersion: 1, token: miaToken }));
+  await dobj.webSocketMessage(fresh as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: miaToken }));
   expect(fresh.last('welcome').seat).toBe(2);
   const state = (await ctx.storage.get<RoomState>('room'))!;
   const views = sockets.map((ws) => ws.last('state').room);
@@ -339,5 +339,151 @@ describe('seat renumbering consistency', () => {
     expect(cf.table).toEqual(SPARSE_TABLE);
     expect(normalize(node.game)).toEqual(normalize(local.game));
     expect(normalize(cf.game)).toEqual(normalize(local.game));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pre-actions (online only; Local Mode has none): the same rules on every backend.
+// Dealer 1, SB 2, BB 3. Seat 3 pre-selects Check (nothing owed), seat 2 Call Any
+// (10 owed). Seat 1 raises to 60: seat 2 calls automatically, seat 3's Check is
+// cancelled with a notice and seat 3 calls by hand. Between streets seat 3 picks
+// Check/Fold; on the flop seat 2 bets 100, so seat 3 folds automatically.
+// ---------------------------------------------------------------------------
+
+const PRE_BEFORE_RAISE: Array<[number, Command]> = [
+  [3, { type: 'setPreAction', preAction: 'check', hand: 1 }],
+  [2, { type: 'setPreAction', preAction: 'callany', hand: 1 }],
+  [1, { type: 'act', action: { type: 'raise', amount: 60 } }],
+];
+const PRE_AFTER_RAISE: Array<[number, Command]> = [
+  [3, { type: 'act', action: { type: 'call' } }],
+  [3, { type: 'setPreAction', preAction: 'checkfold', hand: 1 }],
+  [1, { type: 'host:advance' }],
+  [2, { type: 'act', action: { type: 'bet', amount: 100 } }],
+  [1, { type: 'act', action: { type: 'fold' } }],
+];
+const PRE_CHIPS = { 1: 1940, 2: 2120, 3: 1940 };
+
+function runPreRoomCore() {
+  let s = createOnlineRoom({ id: 'PRECO', hostToken: 'h', hostNickname: 'Host', now: 0, settings: { maxPlayers: 6 } });
+  s = connectSeat(s, 1, 0);
+  for (const seat of [2, 3]) s = connectSeat(joinSeat(s, seat, `P${seat}`, `t${seat}`, 0), seat, 0);
+  let n = 0;
+  const run = (seat: number, cmd: Command) => {
+    const r = applyCommand(s, { seat }, cmd, 0, `r${++n}`);
+    if (!r.ok) throw new Error(`core ${cmd.type}: ${r.error}`);
+    s = r.state;
+  };
+  run(1, { type: 'host:start' });
+  for (const [seat, cmd] of PRE_BEFORE_RAISE) run(seat, cmd);
+  const notice = s.preActionNotices[3];
+  for (const [seat, cmd] of PRE_AFTER_RAISE) run(seat, cmd);
+  return { game: s.game, notice };
+}
+
+async function runPreNode() {
+  const base = `http://127.0.0.1:${server.port}`;
+  const created = await createRoomRequest(base, { settings: { maxPlayers: 6 }, nickname: 'Host' });
+  if (!created.ok) throw new Error(created.error);
+  const id = created.room.roomId;
+  const t1 = new MemoryTokens();
+  t1.set(id, created.room.token);
+  const c = [client(base, id, t1), client(base, id), client(base, id)];
+  await waitFor(() => c.every((x) => x.session.getSnapshot().connection === 'online'));
+  expect((await c[1].session.join(2, 'P2')).ok).toBe(true);
+  expect((await c[2].session.join(3, 'P3')).ok).toBe(true);
+  expect((await c[0].session.send({ type: 'host:start' })).ok).toBe(true);
+  for (const [seat, cmd] of PRE_BEFORE_RAISE) {
+    const r = await c[seat - 1].session.send(cmd);
+    if (!r.ok) throw new Error(`node ${cmd.type}: ${r.error}`);
+  }
+  await waitFor(() => c[2].session.getSnapshot().room?.preActionNotice === 'checkCanceled', 5000, 'notice');
+  // Only seat 3 sees the notice.
+  expect(c[1].session.getSnapshot().room!.preActionNotice).toBe(null);
+  // Seat 3 reconnects (new connection, same token): the state, notice included, is restored; nothing ran.
+  c[2].session.dispose();
+  c[2] = client(base, id, c[2].tokens);
+  await waitFor(() => c[2].session.getSnapshot().mySeat === 3 && !!c[2].session.getSnapshot().room, 5000, 'reconnected');
+  const view = c[2].session.getSnapshot().room!;
+  expect(view.preActionNotice).toBe('checkCanceled');
+  expect(view.myPreAction).toBe(null);
+  expect(view.game!.hand!.toAct).toBe(3);
+  for (const [seat, cmd] of PRE_AFTER_RAISE) {
+    const r = await c[seat - 1].session.send(cmd);
+    if (!r.ok) throw new Error(`node ${cmd.type}: ${r.error}`);
+  }
+  await waitFor(() => c[0].session.getSnapshot().room?.game?.hand?.phase === 'complete', 5000, 'hand complete');
+  const game = c[0].session.getSnapshot().room!.game;
+  for (const x of c) x.session.dispose();
+  return { game, notice: view.preActionNotice };
+}
+
+async function runPreCloudflare() {
+  const ctx = new FakeCtx();
+  let dobj = new RoomDurableObject(ctx as never, {} as never);
+  const settings = { maxPlayers: 6, startingChips: 2000, sb: 10, bb: 20, progression: 'hybrid', levelMinutes: 15, defaultLanguage: 'en' };
+  const res = await dobj.fetch(
+    new Request('https://room/internal/create', { method: 'POST', body: JSON.stringify({ id: 'CFPRE', game: 'texas-holdem', settings, nickname: 'Host', token: 'hosttoken' }) }),
+  );
+  expect(res.status).toBe(201);
+  const sockets = [new FakeSocket(), new FakeSocket(), new FakeSocket()];
+  for (const ws of sockets) dobj.accept(ws as never);
+  await dobj.webSocketMessage(sockets[0] as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: 'hosttoken' }));
+  await dobj.webSocketMessage(sockets[1] as never, JSON.stringify({ t: 'join', seat: 2, nickname: 'P2' }));
+  await dobj.webSocketMessage(sockets[2] as never, JSON.stringify({ t: 'join', seat: 3, nickname: 'P3' }));
+  const token3 = sockets[2].last('joined').token as string;
+  let n = 0;
+  const raw = async (ws: FakeSocket, id: string, cmd: Command) => {
+    await dobj.webSocketMessage(ws as never, JSON.stringify({ t: 'cmd', id, cmd }));
+    return ws.messages().filter((m) => m.t === 'ack' && m.id === id).at(-1);
+  };
+  const send = async (ws: FakeSocket, cmd: Command) => {
+    const ack = await raw(ws, `q${++n}`, cmd);
+    if (!ack?.ok) throw new Error(`cf ${cmd.type}: ${ack?.error}`);
+  };
+  await send(sockets[0], { type: 'host:start' });
+  // Duplicate delivery: a selection sent twice with the same id, then cancelled, then the
+  // same message delivered once more: it is recognised and does not come back.
+  await raw(sockets[2], 'dup', { type: 'setPreAction', preAction: 'callany', hand: 1 });
+  await raw(sockets[2], 'dup', { type: 'setPreAction', preAction: 'callany', hand: 1 });
+  await send(sockets[2], { type: 'setPreAction', preAction: null, hand: 1 });
+  await raw(sockets[2], 'dup', { type: 'setPreAction', preAction: 'callany', hand: 1 });
+  expect(sockets[2].last('state').room.myPreAction).toBe(null);
+  for (const [seat, cmd] of PRE_BEFORE_RAISE) await send(sockets[seat - 1], cmd);
+  expect(sockets[2].last('state').room.preActionNotice).toBe('checkCanceled');
+  expect(sockets[1].last('state').room.preActionNotice).toBe(null);
+  // Evicted and woken again; then seat 3 reconnects on a new socket.
+  dobj = new RoomDurableObject(ctx as never, {} as never);
+  const fresh = new FakeSocket();
+  dobj.accept(fresh as never);
+  await dobj.webSocketMessage(fresh as never, JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION, token: token3 }));
+  const welcome = fresh.last('welcome');
+  expect(welcome.seat).toBe(3);
+  expect(welcome.room.preActionNotice).toBe('checkCanceled');
+  expect(welcome.room.game.hand.toAct).toBe(3);
+  sockets[2] = fresh;
+  for (const [seat, cmd] of PRE_AFTER_RAISE) await send(sockets[seat - 1], cmd);
+  const state = (await ctx.storage.get<RoomState>('room'))!;
+  expect(state.preActions).toEqual({});
+  expect(state.preActionNotices).toEqual({});
+  return { game: state.game, notice: welcome.room.preActionNotice as string };
+}
+
+describe('pre-action consistency', () => {
+  it('room-core, Node.js and Cloudflare run Check, Check/Fold and Call Any identically', async () => {
+    const core = runPreRoomCore();
+    const node = await runPreNode();
+    const cf = await runPreCloudflare();
+    expect(core.notice).toBe('checkCanceled');
+    expect(core.game!.chips).toEqual(PRE_CHIPS);
+    const log = core.game!.hand!.log.filter((e) => e.auto).map((e) => [e.seat, e.type]);
+    expect(log).toEqual([
+      [2, 'call'],
+      [3, 'fold'],
+    ]);
+    expect(node.notice).toBe('checkCanceled');
+    expect(cf.notice).toBe('checkCanceled');
+    expect(normalize(node.game)).toEqual(normalize(core.game));
+    expect(normalize(cf.game)).toEqual(normalize(core.game));
   });
 });

@@ -557,3 +557,52 @@ export function displayStacks(t: TournamentState): Record<number, number> {
   if (t.hand && t.hand.phase !== 'complete') for (const s of t.hand.seats) out[s.seat] = s.stack;
   return out;
 }
+
+/** Automatic action a player can pre-select while waiting for their turn (online only). */
+export type PreActionChoice = 'fold' | 'checkfold' | 'check' | 'callany';
+
+/**
+ * Chips `seat` would have to put in if the turn reached them right now, or
+ * null when the player cannot pre-select anything (not in the hand, folded,
+ * all-in, no betting left). Between streets the next street starts without a
+ * bet, so nothing is owed. This is the amount actually owed, not whether
+ * somebody raised: a big blind facing only calls owes nothing.
+ */
+export function owedForPreAction(hand: HandState, seat: number): number | null {
+  if (hand.phase !== 'betting' && hand.phase !== 'street-complete') return null;
+  if (hand.bettingClosed) return null;
+  const p = hand.seats.find((s) => s.seat === seat);
+  if (!p || p.folded || p.allIn) return null;
+  if (hand.phase === 'street-complete') return 0;
+  return Math.max(0, hand.currentBet - p.bet);
+}
+
+/**
+ * Pre-actions on offer for `seat`, in display order. When checking is legal
+ * (nothing owed): Check/Fold, Check, Call Any — no standalone Fold. When chips
+ * are owed: Fold, Check/Fold, Call Any (Check is not offered, it could only be
+ * cancelled).
+ */
+export function preActionChoices(hand: HandState, seat: number): PreActionChoice[] {
+  const owed = owedForPreAction(hand, seat);
+  if (owed === null) return [];
+  return owed === 0 ? ['checkfold', 'check', 'callany'] : ['fold', 'checkfold', 'callany'];
+}
+
+/**
+ * What a selected pre-action does when the turn arrives: an action to play,
+ * or 'cancel' (Check while a call is required — never folds or calls).
+ * Call Any calls the amount owed, capped at the remaining stack (all-in).
+ */
+export function resolvePreAction(choice: PreActionChoice, legal: LegalActions): PlayerAction | 'cancel' {
+  switch (choice) {
+    case 'fold':
+      return { type: 'fold' };
+    case 'checkfold':
+      return legal.canCheck ? { type: 'check' } : { type: 'fold' };
+    case 'check':
+      return legal.canCheck ? { type: 'check' } : 'cancel';
+    case 'callany':
+      return legal.canCheck ? { type: 'check' } : { type: 'call' };
+  }
+}

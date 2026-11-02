@@ -41,6 +41,16 @@ Locale files are in `packages/i18n/locales/<code>.json`, and English (`en.json`)
 
 To fix a translation, edit the JSON. To add a language, add the file, register it in `packages/i18n/src/index.ts`, and add it to `LANGUAGES` in `packages/game-protocol`. Keep poker terms the way players at a real table say them in that language.
 
+## Versioning and build information
+
+The app version is defined in one place: `"version"` in the root `package.json`. It is not bumped automatically; change it by hand when preparing a release:
+
+1. Edit `"version"` in the root `package.json` (e.g. `0.1.0` → `0.2.0`).
+2. Set the same value in every `apps/*/package.json` and `packages/*/package.json`, including the `@feltcircle/*` dependency ranges, then run `npm install --package-lock-only` to refresh `package-lock.json` (only the workspace version lines should change).
+3. Run `npm test`: `apps/web/test/build-info.test.tsx` fails if anything is out of sync.
+
+Builds embed only the version and the short commit SHA (`apps/web/build-info.ts`). The commit comes from `GITHUB_SHA` (GitHub Actions), `WORKERS_CI_COMMIT_SHA` (Cloudflare Workers Builds), `CF_PAGES_COMMIT_SHA` (Cloudflare Pages) or `git rev-parse HEAD`; without any of them only the version is shown. Settings shows e.g. `FeltCircle v0.1.0 · Build 1a2b3c4`, the build actually deployed — nothing is looked up at runtime. The servers report the same version in `/api/capabilities`.
+
 ## Commit style
 
 Small, focused commits with a clear message. Please describe how you tested the change in the pull request.

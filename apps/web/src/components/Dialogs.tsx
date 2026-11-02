@@ -5,6 +5,7 @@ import { useI18n } from '../lib/i18n';
 import { seatName } from '../lib/format';
 import { LanguageSelect, Modal, NumberField, Segmented } from './ui';
 import { HandRankingsDialog } from './HandRankings';
+import { BUILD } from '../lib/build-info';
 import { SoundSettings } from './Sound';
 
 export interface BlindValues {
@@ -161,6 +162,24 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       <LanguageSelect />
       <p className="muted small">{t('settings.languageNote')}</p>
       <SoundSettings />
+      <BuildLine />
     </Modal>
+  );
+}
+
+/** Identifies the deployed build: version from package.json and the commit it was built from. */
+export function BuildLine() {
+  const { t } = useI18n();
+  if (!BUILD.version) return null;
+  return (
+    <p className="muted small build-line" data-testid="build-info">
+      FeltCircle v{BUILD.version}
+      {BUILD.commit && (
+        <>
+          {' · '}
+          {t('settings.build')} <code>{BUILD.commit}</code>
+        </>
+      )}
+    </p>
   );
 }

@@ -174,6 +174,12 @@
   "pre.fold": "フォールド",
   "pre.checkfold": "チェック/フォールド",
   "pre.callany": "コール・エニー",
+  "pre.check": "チェック",
+  "pre.hint.fold": "自分の番でフォールドします。",
+  "pre.hint.checkfold": "ベットがなければチェック、あればフォールドします。",
+  "pre.hint.check": "ベットがなければチェックします。ベットがあれば自分で選びます。",
+  "pre.hint.callany": "ベットがなければチェック、あれば金額に関係なくコールします（残りのチップすべてを使う場合があります）。",
+  "pre.checkCanceled": "自動チェックはキャンセルされました。アクションを選んでください。",
   "pre.clear": "解除",
   "pre.selected": "事前選択：{name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "あなたの言語",
   "settings.languageNote": "あなたの画面だけが変わります。",
   "settings.title": "設定",
+  "settings.build": "ビルド",
 
   "help.1": "いつも通り本物のカードを配って公開します。FeltCircle はチップの代わりになるだけです。",
   "help.2": "ブラインドは自動で支払われ、アクションするプレイヤーが強調表示されます。",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "サーバーに接続されていません。",
   "error.UNSUPPORTED_GAME": "このゲームはまだ利用できません。",
   "error.NOT_ELIGIBLE": "どのポットにも参加していません。",
+  "error.PRE_ACTION_UNAVAILABLE": "その事前選択は使用できなくなりました。",
   "error.JOIN_REJECTED": "ホストが参加リクエストを拒否しました。",
   "error.CANNOT_MUCK": "あなたはポットに残る最後のプレイヤーなのでマックできません。",
 

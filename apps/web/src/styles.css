@@ -1106,6 +1106,34 @@ textarea.code,
   color: #1b1405;
 }
 
+.btn-pre {
+  min-height: 44px;
+  line-height: 1.15;
+}
+
+.btn-pre:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.pre-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.pre-notice {
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-s);
+  background: rgba(214, 178, 94, 0.12);
+  color: var(--gold-hi);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 .pot-select {
   background: var(--bg-2);
   border: 1px solid var(--line);

@@ -174,6 +174,12 @@
   "pre.fold": "弃牌",
   "pre.checkfold": "过牌/弃牌",
   "pre.callany": "跟任何注",
+  "pre.check": "过牌",
+  "pre.hint.fold": "轮到你时弃牌。",
+  "pre.hint.checkfold": "无人下注时过牌，否则弃牌。",
+  "pre.hint.check": "无人下注时过牌。有人下注时由你决定。",
+  "pre.hint.callany": "无人下注时过牌，否则跟任何注额，最多可跟入你剩余的全部筹码。",
+  "pre.checkCanceled": "自动过牌已取消。请选择你的操作。",
   "pre.clear": "清除",
   "pre.selected": "已预选：{name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "你的语言",
   "settings.languageNote": "只会改变你自己的界面。",
   "settings.title": "设置",
+  "settings.build": "构建",
 
   "help.1": "像平常一样发牌、亮牌，FeltCircle 只负责代替筹码。",
   "help.2": "盲注自动下，当前需要行动的玩家会高亮显示。",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "未连接到服务器。",
   "error.UNSUPPORTED_GAME": "该游戏暂未开放。",
   "error.NOT_ELIGIBLE": "你不在任何底池中。",
+  "error.PRE_ACTION_UNAVAILABLE": "该预选已不可用。",
   "error.JOIN_REJECTED": "房主拒绝了你的加入申请。",
   "error.CANNOT_MUCK": "你是某个底池的最后一名玩家，不能盖牌。",
 

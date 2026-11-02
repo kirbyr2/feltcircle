@@ -3,7 +3,13 @@ import type { ImportResolution, SeatChips } from '@feltcircle/chip-export';
 import { isValidChips, isValidSeat } from '@feltcircle/chip-export';
 
 export const APP_ID = 'feltcircle';
-export const PROTOCOL_VERSION = 1;
+/**
+ * Bump on incompatible protocol changes; older clients are then asked to reload.
+ * 2: seats are renumbered when the game starts and `RoomView.viewerSeat` tells
+ *    each client its (possibly new) seat. Pre-action `check` (distinct from
+ *    `checkfold`), `setPreAction.hand` and `RoomView.preActionNotice`.
+ */
+export const PROTOCOL_VERSION = 2;
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 10;
 export const MAX_NICKNAME = 20;
@@ -96,7 +102,16 @@ export const DEFAULT_SETTINGS: RoomSettings = {
   defaultLanguage: 'en',
 };
 
-export type PreAction = 'fold' | 'checkfold' | 'callany';
+/**
+ * Pre-selected automatic action. `check` and `checkfold` are distinct values:
+ * Check never folds or calls (it is cancelled when a call becomes necessary),
+ * Check/Fold folds. Which ones are on offer depends on the amount owed
+ * (`preActionChoices` in the poker engine).
+ */
+export type PreAction = 'fold' | 'checkfold' | 'check' | 'callany';
+export const PRE_ACTIONS: readonly PreAction[] = ['fold', 'checkfold', 'check', 'callany'];
+/** Why the viewer's pre-action was removed without being executed. */
+export type PreActionNotice = 'checkCanceled';
 export type RoomStatus = 'lobby' | 'playing' | 'finished';
 export type RoomMode = 'online' | 'local';
 
@@ -140,6 +155,8 @@ export interface RoomView {
   nextLevelInMs: number | null;
   /** The viewer's own pending pre-action (other players' pre-actions are private). */
   myPreAction: PreAction | null;
+  /** Set when the viewer's Check was cancelled because a call became necessary. */
+  preActionNotice?: PreActionNotice | null;
   canUndo: boolean;
   /**
    * The seat this view was rendered for (null for spectators/unseated clients
@@ -181,7 +198,11 @@ export interface BlindSettings {
 export type Command =
   /** `seat` is only used in Local Mode, where one device acts for every seat. */
   | { type: 'act'; action: PlayerAction; seat?: number }
-  | { type: 'setPreAction'; preAction: PreAction | null }
+  /**
+   * `hand`: the hand number the client saw when choosing. A selection that
+   * arrives for another hand (late, resent after a reconnect) is rejected.
+   */
+  | { type: 'setPreAction'; preAction: PreAction | null; hand?: number }
   | { type: 'setNickname'; nickname: string; seat?: number }
   | { type: 'setAway'; away: boolean; seat?: number }
   | { type: 'leaveSeat' }
@@ -260,7 +281,9 @@ export type ErrorCode =
   | 'RATE_LIMITED'
   | 'BAD_TOKEN'
   | 'UNSUPPORTED_GAME'
-  | 'NOT_ELIGIBLE';
+  | 'NOT_ELIGIBLE'
+  /** The pre-action is not on offer right now (e.g. Check while a call is required) or the hand has moved on. */
+  | 'PRE_ACTION_UNAVAILABLE';
 
 // ---------------------------------------------------------------------------
 // Validation (never trust the wire)
@@ -373,8 +396,9 @@ export function validateCommand(c: unknown): Command | null {
       return c.seat === undefined ? { type: 'act', action } : { type: 'act', action, seat: c.seat as number };
     }
     case 'setPreAction':
-      if (c.preAction !== null && !['fold', 'checkfold', 'callany'].includes(c.preAction as string)) return null;
-      return { type: 'setPreAction', preAction: c.preAction as PreAction | null };
+      if (c.preAction !== null && !PRE_ACTIONS.includes(c.preAction as PreAction)) return null;
+      if (c.hand !== undefined && !isInt(c.hand, 1)) return null;
+      return { type: 'setPreAction', preAction: c.preAction as PreAction | null, ...(c.hand !== undefined ? { hand: c.hand as number } : {}) };
     case 'setNickname':
       if (!isStr(c.nickname, 100) || !optSeat(c.seat)) return null;
       return { type: 'setNickname', nickname: cleanNickname(c.nickname), ...(c.seat !== undefined ? { seat: c.seat as number } : {}) };

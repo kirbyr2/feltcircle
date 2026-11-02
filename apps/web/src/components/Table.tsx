@@ -4,6 +4,24 @@ import { useGame } from './game-context';
 import { PotDisplay } from './PotDisplay';
 
 /**
+ * Where seat `index` of the ordered occupied seats sits around the in-game
+ * table, in % of the table area: the anchor (the viewer, or the first seat)
+ * at the bottom and the others clockwise, evenly spaced over `count`
+ * positions. Depends only on the occupied seats, never on the room's capacity.
+ */
+export function tablePosition(index: number, count: number, anchorIndex: number) {
+  const total = Math.max(1, count);
+  const idx = (index - anchorIndex + total) % total;
+  const angle = Math.PI / 2 + (idx / total) * Math.PI * 2;
+  return {
+    x: 50 + 44 * Math.cos(angle),
+    y: 50 + 42 * Math.sin(angle),
+    betX: 50 + 26 * Math.cos(angle),
+    betY: 50 + 25 * Math.sin(angle),
+  };
+}
+
+/**
  * Oval table with the seated players in clockwise physical order, evenly
  * spaced (empty seats are not shown: seats are renumbered without gaps when
  * the game starts). Online, the viewer's own seat is rotated to the bottom;
@@ -16,7 +34,6 @@ export function Table() {
   const hand = g?.hand ?? null;
   const stacks = g ? displayStacks(g) : {};
   const seats = room.seats.map((s) => s.seat).sort((a, b) => a - b);
-  const total = Math.max(1, seats.length);
   const anchorIdx = Math.max(0, seats.indexOf(mySeat ?? seats[0]));
   const inHand = new Map(hand?.seats.map((s) => [s.seat, s]) ?? []);
   const live = hand && hand.phase !== 'complete';
@@ -31,13 +48,7 @@ export function Table() {
         </div>
       </div>
       {seats.map((seat, i) => {
-        // Position clockwise with the anchor seat at the bottom (angle 90° in screen coords).
-        const idx = (i - anchorIdx + total) % total;
-        const angle = Math.PI / 2 + (idx / total) * Math.PI * 2;
-        const x = 50 + 44 * Math.cos(angle);
-        const y = 50 + 42 * Math.sin(angle);
-        const bx = 50 + 26 * Math.cos(angle);
-        const by = 50 + 25 * Math.sin(angle);
+        const { x, y, betX: bx, betY: by } = tablePosition(i, seats.length, anchorIdx);
         const sv = room.seats.find((s) => s.seat === seat)!;
         const hs = inHand.get(seat);
         const stack = stacks[seat] ?? 0;

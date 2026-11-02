@@ -1,5 +1,5 @@
 import type { Command } from '@feltcircle/game-protocol';
-import { applyCommand, toView, type RoomState } from '@feltcircle/room-core';
+import { applyCommand, normalizeRoom, toView, type RoomState } from '@feltcircle/room-core';
 import { Emitter, randomId, type CommandOutcome, type GameSession, type SessionSnapshot } from './types.js';
 
 export interface LocalStore {
@@ -20,6 +20,8 @@ export class LocalSession implements GameSession {
     private readonly store: LocalStore,
     private readonly now: () => number = Date.now,
   ) {
+    // Games saved on this device by an older version lack newer fields.
+    this.state = normalizeRoom(state);
     this.snapshot = this.makeSnapshot(null);
   }
 

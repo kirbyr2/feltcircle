@@ -174,6 +174,12 @@
   "pre.fold": "Fold",
   "pre.checkfold": "Check / Fold",
   "pre.callany": "Call Any",
+  "pre.check": "Check",
+  "pre.hint.fold": "Folds when your turn comes.",
+  "pre.hint.checkfold": "Checks if nobody bets; otherwise folds.",
+  "pre.hint.check": "Checks if nobody bets. If someone bets, you choose.",
+  "pre.hint.callany": "Checks if nobody bets; otherwise calls any amount, up to all your remaining chips.",
+  "pre.checkCanceled": "Auto-check canceled. Choose your action.",
   "pre.clear": "Clear",
   "pre.selected": "Pre-selected: {name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "Your language",
   "settings.languageNote": "Only changes your own screen.",
   "settings.title": "Settings",
+  "settings.build": "Build",
 
   "help.1": "Deal and reveal real cards as usual. FeltCircle only replaces the chips.",
   "help.2": "Blinds are posted automatically and the player to act is highlighted.",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "Not connected to the server.",
   "error.UNSUPPORTED_GAME": "This game is not available yet.",
   "error.NOT_ELIGIBLE": "You are not in any pot.",
+  "error.PRE_ACTION_UNAVAILABLE": "That pre-selection is no longer available.",
   "error.JOIN_REJECTED": "The host declined your request to join.",
   "error.CANNOT_MUCK": "You are the last player in a pot, so you cannot muck.",
 

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { createRoomRequest, detectBackend, fetchRoomSummary } from '@feltcircle/game-session';
-import { AUTO_FOLD_AFTER_MS, ROOM_TTL_MS } from '@feltcircle/game-protocol';
+import { AUTO_FOLD_AFTER_MS, PROTOCOL_VERSION, ROOM_TTL_MS } from '@feltcircle/game-protocol';
 import { loadConfig } from '../apps/server-node/src/config.js';
 import { startServer, type RunningServer } from '../apps/server-node/src/server.js';
 import { backupDatabase } from '../apps/server-node/src/db.js';
@@ -61,7 +61,7 @@ describe('Node.js backend', () => {
   it('reports capabilities and passes detection', async () => {
     const { base } = await boot();
     const res = await fetch(`${base}/api/capabilities`);
-    expect(await res.json()).toMatchObject({ app: 'feltcircle', protocolVersion: 1, features: { multiplayer: true, websocket: true, persistence: true } });
+    expect(await res.json()).toMatchObject({ app: 'feltcircle', protocolVersion: PROTOCOL_VERSION, features: { multiplayer: true, websocket: true, persistence: true } });
     const status = await detectBackend(base);
     expect(status.state).toBe('available');
     expect((await detectBackend('http://127.0.0.1:1')).state).toBe('unavailable');
@@ -167,6 +167,19 @@ describe('Node.js backend', () => {
     expect(stored.game!.seats).toEqual([1, 2, 3]);
   });
 
+  it('asks clients from before seat renumbering (protocol 1) to reload', async () => {
+    const { base } = await boot();
+    const created = await createRoomRequest(base, { settings: {}, nickname: '' });
+    if (!created.ok) throw new Error(created.error);
+    expect(PROTOCOL_VERSION).toBe(2);
+    const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?room=${created.room.roomId}`);
+    const first = new Promise<string>((r) => ws.on('message', (d) => r(d.toString())));
+    await new Promise((r) => ws.on('open', r));
+    ws.send(JSON.stringify({ t: 'hello', protocolVersion: 1, token: created.room.token }));
+    expect(JSON.parse(await first)).toMatchObject({ t: 'error', error: 'PROTOCOL_MISMATCH' });
+    ws.close();
+  });
+
   it('a rejected late joiner is told so', async () => {
     const { base } = await boot();
     const { id, s } = await roomWithPlayers(base, 2);
@@ -214,7 +227,7 @@ describe('Node.js backend', () => {
     await new Promise((r) => ws.on('open', r));
     ws.send('not json');
     ws.send(JSON.stringify({ t: 'cmd', id: 'x', cmd: { type: 'act', action: { type: 'bet', amount: -5 } } }));
-    ws.send(JSON.stringify({ t: 'hello', protocolVersion: 1 }));
+    ws.send(JSON.stringify({ t: 'hello', protocolVersion: PROTOCOL_VERSION }));
     ws.send(JSON.stringify({ t: 'join', seat: 1, nickname: 'thief' }));
     await waitFor(() => msgs.length >= 4);
     expect(msgs.slice(0, 2).map((m) => JSON.parse(m).error)).toEqual(['INVALID_MESSAGE', 'INVALID_MESSAGE']);

@@ -23,7 +23,7 @@ The HTTP API works but WebSockets don't.
 
 ## Invite links (`/join/CODE`) show "Not found"
 
-Invite links are real paths such as `https://example.com/join/CFW27`. The app turns them into its internal `#/join/CFW27` route.
+Invite links are real paths such as `https://example.com/join/CFW27?lang=de`. The app turns them into its internal `#/join/CFW27` route. `lang` only sets the language of the person opening the link; links without it still work.
 
 - **Node server / Docker / Cloudflare:** handled automatically (SPA fallback).
 - **Nginx/OpenResty serving the static files itself:** use `try_files $uri $uri/ /index.html;` in `location /`.

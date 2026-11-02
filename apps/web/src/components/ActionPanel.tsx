@@ -3,6 +3,7 @@ import { legalActions, type PlayerAction } from '@feltcircle/poker-engine';
 import { useI18n } from '../lib/i18n';
 import { useGame } from './game-context';
 import { BetSlider } from './BetSlider';
+import { PreActionNotice } from './Panels';
 
 /** Fold / Check / Call / Bet-Raise / All-in for the player to act. */
 export function ActionPanel({ seat }: { seat: number }) {
@@ -46,6 +47,7 @@ export function ActionPanel({ seat }: { seat: number }) {
         {local ? t('action.actingFor', { name: name(seat) }) : t('game.yourTurn')}
         {legal.callAmount > 0 && <span className="muted"> · {t('game.bet', { amount: n(legal.tableBet) })}</span>}
       </div>
+      {!local && <PreActionNotice />}
       <div className="action-row">
         <button className="btn btn-fold" disabled={disabled} onClick={() => act({ type: 'fold' })}>
           {t('action.fold')}

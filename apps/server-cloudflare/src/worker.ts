@@ -7,10 +7,12 @@ import {
 } from '@feltcircle/game-protocol';
 import { generateUniqueRoomId, randomToken } from '@feltcircle/room-core';
 import type { Env } from './env.js';
+import { version } from '../../../package.json';
 
 export { RoomDurableObject, RateLimiterDurableObject } from './room-do.js';
 
-const VERSION = '1.0.0';
+/** App version: the root package.json is the single source of truth (inlined by the bundler). */
+const VERSION: string = version;
 
 function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), {

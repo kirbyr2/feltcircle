@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildDefines } from './build-info';
 
 /**
  * Emits `sw.js` with a precache list of every built file, so Local Mode works
@@ -57,6 +58,8 @@ export default defineConfig({
   // Relative base: the same build works at a domain root or under a sub-path (GitHub Pages).
   base: './',
   plugins: [react(), serviceWorker(), notFoundPage()],
+  // App version (root package.json) and the commit being built, shown in Settings.
+  define: buildDefines(),
   build: {
     target: 'es2020',
     sourcemap: false,

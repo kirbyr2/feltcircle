@@ -196,7 +196,9 @@ describe('pre-actions', () => {
     let s = ok(onlineRoom(3), 1, { type: 'host:start' });
     expect(cmd(s, 1, { type: 'setPreAction', preAction: 'fold' }).error).toBe('NOT_ALLOWED');
     s = ok(s, 2, { type: 'setPreAction', preAction: 'checkfold' });
-    s = ok(s, 3, { type: 'setPreAction', preAction: 'fold' });
+    // Seat 3 (big blind) owes nothing, so the standalone Fold is not on offer.
+    expect(cmd(s, 3, { type: 'setPreAction', preAction: 'fold' }).error).toBe('PRE_ACTION_UNAVAILABLE');
+    s = ok(s, 3, { type: 'setPreAction', preAction: 'checkfold' });
     s = ok(s, 3, { type: 'setPreAction', preAction: null });
     s = ok(s, 1, { type: 'act', action: { type: 'raise', amount: 80 } });
     expect(s.game!.hand!.seats.find((x) => x.seat === 2)!.folded).toBe(true);

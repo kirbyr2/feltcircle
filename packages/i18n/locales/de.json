@@ -174,6 +174,12 @@
   "pre.fold": "Passen",
   "pre.checkfold": "Check/Fold",
   "pre.callany": "Alles mitgehen",
+  "pre.check": "Checken",
+  "pre.hint.fold": "Passt, wenn du dran bist.",
+  "pre.hint.checkfold": "Checkt, wenn niemand setzt, sonst Passen.",
+  "pre.hint.check": "Checkt, wenn niemand setzt. Setzt jemand, entscheidest du.",
+  "pre.hint.callany": "Checkt, wenn niemand setzt, sonst geht jeden Betrag mit – bis zu all deinen restlichen Chips.",
+  "pre.checkCanceled": "Auto-Check abgebrochen. Wähle deine Aktion.",
   "pre.clear": "Löschen",
   "pre.selected": "Vorausgewählt: {name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "Deine Sprache",
   "settings.languageNote": "Ändert nur deinen eigenen Bildschirm.",
   "settings.title": "Einstellungen",
+  "settings.build": "Build",
 
   "help.1": "Teilt echte Karten aus und deckt sie wie gewohnt auf. FeltCircle ersetzt nur die Chips.",
   "help.2": "Blinds werden automatisch gezahlt, und der Spieler am Zug wird hervorgehoben.",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "Nicht mit dem Server verbunden.",
   "error.UNSUPPORTED_GAME": "Dieses Spiel ist noch nicht verfügbar.",
   "error.NOT_ELIGIBLE": "Du bist an keinem Pot beteiligt.",
+  "error.PRE_ACTION_UNAVAILABLE": "Diese Vorauswahl ist nicht mehr verfügbar.",
   "error.JOIN_REJECTED": "Der Host hat deine Anfrage abgelehnt.",
   "error.CANNOT_MUCK": "Du bist der letzte Spieler in einem Pot und kannst nicht mucken.",
 

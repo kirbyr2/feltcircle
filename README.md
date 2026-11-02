@@ -34,7 +34,8 @@ Both modes use the same rules engine, and chips can move between them with **chi
 - The betting slider has Min / ½ Pot / Pot / All-in presets. A bet is only made when confirmed, never while dragging.
 - Game selection: the same catalog in Local Mode and online. Texas Hold'em is available; Riichi Mahjong is shown as *Coming Soon*, and backends reject it.
 - Simple room setup: player count, starting chips and blinds up front. *Advanced settings* (collapsed) holds blind progression (Hybrid by default, Time, Players or Fixed) and the level interval. The big blind must be larger than the small blind.
-- Pre-actions: Fold, Check/Fold, Call Any, Clear.
+- Pre-actions, based on the amount you owe: Check/Fold, Check and Call Any when checking is free (Check never folds or calls — it is cancelled with a notice if someone bets); Fold, Check/Fold and Call Any when you face a bet. Tap again to cancel.
+- Invite links carry the sharer's current language (`?lang=zh-CN`); the recipient sees the join screen in it and can switch at any time.
 - Circular seat selection: seats sit around an oval table (seat 1 at the top, clockwise), sized for phones and desktop at every table size from 2 to 10. When the game starts, the server closes gaps between seats once (waiting-room seats 1, 2, 4, 6 play as 1, 2, 3, 4), keeping the clockwise order, the host, the chosen dealer and everyone's reconnect link.
 - Late joining: after the game starts, newcomers request a free seat. The host approves with the chips they choose (default 2,000) or declines, and the player is dealt in from the next hand. The host can enlarge the table up to 10 seats.
 - Flexible chips: no fixed chip supply. Between hands the host can correct or top up any balance, and every change is recorded in the history.

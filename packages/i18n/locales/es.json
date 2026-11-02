@@ -174,6 +174,12 @@
   "pre.fold": "Retirarse",
   "pre.checkfold": "Pasar / Retirarse",
   "pre.callany": "Igualar todo",
+  "pre.check": "Pasar",
+  "pre.hint.fold": "Se retira cuando llegue tu turno.",
+  "pre.hint.checkfold": "Pasa si nadie apuesta; si no, se retira.",
+  "pre.hint.check": "Pasa si nadie apuesta. Si alguien apuesta, decides tú.",
+  "pre.hint.callany": "Pasa si nadie apuesta; si no, iguala cualquier cantidad, hasta todas tus fichas restantes.",
+  "pre.checkCanceled": "Pase automático cancelado. Elige tu acción.",
   "pre.clear": "Borrar",
   "pre.selected": "Preseleccionado: {name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "Tu idioma",
   "settings.languageNote": "Solo cambia tu propia pantalla.",
   "settings.title": "Ajustes",
+  "settings.build": "Compilación",
 
   "help.1": "Repartid y mostrad cartas reales como siempre. FeltCircle solo sustituye las fichas.",
   "help.2": "Las ciegas se ponen automáticamente y se resalta al jugador al que le toca.",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "Sin conexión con el servidor.",
   "error.UNSUPPORTED_GAME": "Este juego aún no está disponible.",
   "error.NOT_ELIGIBLE": "No participas en ningún bote.",
+  "error.PRE_ACTION_UNAVAILABLE": "Esa preselección ya no está disponible.",
   "error.JOIN_REJECTED": "El anfitrión rechazó tu solicitud.",
   "error.CANNOT_MUCK": "Eres el último jugador de un bote y no puedes descartar.",
 

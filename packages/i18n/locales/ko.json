@@ -174,6 +174,12 @@
   "pre.fold": "폴드",
   "pre.checkfold": "체크/폴드",
   "pre.callany": "콜 애니",
+  "pre.check": "체크",
+  "pre.hint.fold": "내 차례가 오면 폴드합니다.",
+  "pre.hint.checkfold": "베팅이 없으면 체크, 있으면 폴드합니다.",
+  "pre.hint.check": "베팅이 없으면 체크합니다. 누군가 베팅하면 직접 선택합니다.",
+  "pre.hint.callany": "베팅이 없으면 체크, 있으면 금액에 상관없이 콜합니다(남은 칩 전부까지).",
+  "pre.checkCanceled": "자동 체크가 취소되었습니다. 액션을 선택하세요.",
   "pre.clear": "해제",
   "pre.selected": "미리 선택됨: {name}",
 
@@ -293,6 +299,7 @@
   "settings.language": "내 언어",
   "settings.languageNote": "내 화면만 바뀝니다.",
   "settings.title": "설정",
+  "settings.build": "빌드",
 
   "help.1": "평소처럼 실제 카드를 돌리고 공개하세요. FeltCircle은 칩만 대신합니다.",
   "help.2": "블라인드는 자동으로 내며, 행동할 차례인 플레이어가 강조 표시됩니다.",
@@ -371,6 +378,7 @@
   "error.DISCONNECTED": "서버에 연결되어 있지 않습니다.",
   "error.UNSUPPORTED_GAME": "아직 이용할 수 없는 게임입니다.",
   "error.NOT_ELIGIBLE": "참여 중인 팟이 없습니다.",
+  "error.PRE_ACTION_UNAVAILABLE": "해당 사전 선택은 더 이상 사용할 수 없습니다.",
   "error.JOIN_REJECTED": "호스트가 참가 요청을 거절했습니다.",
   "error.CANNOT_MUCK": "팟에 남은 마지막 플레이어이므로 머크할 수 없습니다.",
 

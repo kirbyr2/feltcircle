@@ -252,14 +252,15 @@ function Qr({ text }: { text: string }) {
   return src ? <img className="qr" src={src} alt="QR" width={180} height={180} /> : <div className="qr" />;
 }
 
-function Lobby() {
+export function Lobby() {
   const { room, isHost, send, canSend, mySeat, name } = useGame();
-  const { t, n } = useI18n();
+  const { t, n, locale } = useI18n();
   const toast = useToast();
   const [dialog, setDialog] = useState<null | 'settings' | 'import' | 'nick'>(null);
   const [dealer, setDealer] = useState<number | null>(null);
   const [manage, setManage] = useState<number | null>(null);
-  const url = inviteUrl(room.id, getServerOverride());
+  // The sharer's language right now (copy, share and QR all follow language changes).
+  const url = inviteUrl(room.id, getServerOverride(), locale);
   const count = room.seats.length;
   const share = async () => {
     const text = `${t('lobby.shareText', { code: room.id })} ${url}`;

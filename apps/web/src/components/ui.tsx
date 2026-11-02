@@ -73,11 +73,11 @@ export function Segmented<T extends string | number>({ value, options, onChange 
 }
 
 export function LanguageSelect({ compact }: { compact?: boolean }) {
-  const { locale, personal, setPersonal, t } = useI18n();
+  const { locale, setPersonal, t } = useI18n();
   return (
     <label className={compact ? 'lang-compact' : 'field'}>
       {!compact && <span>{t('settings.language')}</span>}
-      <select aria-label={t('settings.language')} value={personal ?? locale} onChange={(e) => setPersonal(e.target.value as LocaleCode)}>
+      <select aria-label={t('settings.language')} value={locale} onChange={(e) => setPersonal(e.target.value as LocaleCode)}>
         {LOCALES.map((l) => (
           <option key={l.code} value={l.code}>
             {l.name}

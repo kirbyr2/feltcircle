@@ -1,6 +1,6 @@
 {
   "name": "@feltcircle/server-cloudflare",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -11,10 +11,10 @@
     "check": "wrangler deploy --dry-run --outdir dist"
   },
   "dependencies": {
-    "@feltcircle/chip-export": "1.0.0",
-    "@feltcircle/game-protocol": "1.0.0",
-    "@feltcircle/poker-engine": "1.0.0",
-    "@feltcircle/room-core": "1.0.0"
+    "@feltcircle/chip-export": "0.1.0",
+    "@feltcircle/game-protocol": "0.1.0",
+    "@feltcircle/poker-engine": "0.1.0",
+    "@feltcircle/room-core": "0.1.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",

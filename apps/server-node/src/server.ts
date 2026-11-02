@@ -24,8 +24,10 @@ import {
 } from '@feltcircle/room-core';
 import { RoomDb } from './db.js';
 import type { ServerConfig } from './config.js';
+import { version } from '../../../package.json';
 
-export const SERVER_VERSION = '1.0.0';
+/** App version: the root package.json is the single source of truth (inlined by the bundler). */
+export const SERVER_VERSION: string = version;
 const MAX_CONNECTIONS_PER_ROOM = 40;
 const WS_PING_MS = 25_000;
 

@@ -12,6 +12,9 @@ import {
   liveSeats,
   msUntilNextLevel,
   muck,
+  owedForPreAction,
+  preActionChoices,
+  resolvePreAction,
   pauseClock,
   playersPerLevelFor,
   seatPlayer,
@@ -36,6 +39,7 @@ import {
   type ErrorCode,
   type GameId,
   type PreAction,
+  type PreActionNotice,
   type RoomLogEntry,
   type RoomMode,
   type RoomSettings,
@@ -93,6 +97,8 @@ export interface RoomState {
   seats: Record<number, SeatRecord>;
   game: TournamentState | null;
   preActions: Record<number, PreAction>;
+  /** Pre-actions removed without running (Check cancelled by a bet); shown to that player until they act or choose again. */
+  preActionNotices: Record<number, PreActionNotice>;
   /** Snapshots of `game` before each undoable step within the current hand. */
   undo: TournamentState[];
   pendingImport: PendingImport | null;
@@ -107,9 +113,15 @@ const MAX_REQUESTS = MAX_PLAYERS;
 
 /** Fill fields added after a room was first stored (rooms persisted by an older version). */
 export function normalizeRoom(state: RoomState): RoomState {
-  const s = state as RoomState & Partial<Pick<RoomState, 'gameType' | 'requests' | 'claims'>>;
-  if (s.gameType && s.requests && s.claims) return state;
-  return { ...state, gameType: s.gameType ?? DEFAULT_GAME, requests: s.requests ?? {}, claims: s.claims ?? [] };
+  const s = state as RoomState & Partial<Pick<RoomState, 'gameType' | 'requests' | 'claims' | 'preActionNotices'>>;
+  if (s.gameType && s.requests && s.claims && s.preActionNotices) return state;
+  return {
+    ...state,
+    gameType: s.gameType ?? DEFAULT_GAME,
+    requests: s.requests ?? {},
+    claims: s.claims ?? [],
+    preActionNotices: s.preActionNotices ?? {},
+  };
 }
 
 /** Who is issuing a command. Local Mode uses `{ local: true }`: host + acts for any seat. */
@@ -209,6 +221,7 @@ function baseRoom(id: string, mode: RoomMode, settings: RoomSettings, now: numbe
     seats: {},
     game: null,
     preActions: {},
+    preActionNotices: {},
     undo: [],
     pendingImport: null,
     requests: {},
@@ -361,7 +374,7 @@ export function tick(state0: RoomState, now: number): TickResult {
   for (const s of Object.values(state.seats)) {
     if (s.connections === 0 && s.offlineSince !== null && !s.autoFold && now - s.offlineSince >= AUTO_FOLD_AFTER_MS) {
       s.autoFold = true;
-      delete state.preActions[s.seat];
+      dropPreAction(state, s.seat);
       log(state, now, s.seat, 'autoFoldOn');
       changed = true;
     }
@@ -477,6 +490,7 @@ function applySeatMap(state: RoomState, map: Record<number, number>) {
   const preActions: RoomState['preActions'] = {};
   for (const [k, v] of Object.entries(state.preActions)) if (has(Number(k))) preActions[map[Number(k)]] = v;
   state.preActions = preActions;
+  state.preActionNotices = {}; // the game is only starting: nothing can have been cancelled yet
   state.claims = state.claims.filter(has).map((seat) => map[seat]);
   // `requests` needs no mapping: late-join requests cannot exist in the waiting
   // room (requestSeat refuses there and host:newGame turns them into seats).
@@ -588,7 +602,7 @@ function targetSeat(state: RoomState, actor: Actor, requested: number | undefine
 function afterGameChange(state: RoomState) {
   const g = state.game;
   if (!g) return;
-  if (g.hand && g.hand.phase === 'complete') state.preActions = {};
+  if (g.hand && g.hand.phase === 'complete') clearPreActions(state);
   if (g.finished) state.status = 'finished';
 }
 
@@ -613,23 +627,29 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       state.game = applyAction(g, seat, cmd.action as PlayerAction);
       state.undo.push(before);
       if (state.undo.length > MAX_UNDO) state.undo.shift();
-      delete state.preActions[seat];
+      dropPreAction(state, seat);
       afterGameChange(state);
       return;
     }
     case 'setPreAction': {
       const seat = requireSeated(state, actor);
+      const h = state.game?.hand ?? null;
+      // A selection made for another hand (delayed, or resent after a reconnect) never applies here.
+      const stale = cmd.hand !== undefined && cmd.hand !== h?.number;
       if (cmd.preAction === null) {
-        delete state.preActions[seat];
+        if (!stale) dropPreAction(state, seat);
         return;
       }
-      const g = requireGame(state);
-      const h = g.hand;
+      if (stale) throw new RoomError('PRE_ACTION_UNAVAILABLE');
+      requireGame(state);
       const me = h?.seats.find((s) => s.seat === seat);
       if (!h || (h.phase !== 'betting' && h.phase !== 'street-complete') || !me || me.folded || me.allIn) {
         throw new RoomError('NOT_ALLOWED');
       }
       if (h.phase === 'betting' && h.toAct === seat) throw new RoomError('NOT_ALLOWED');
+      // Checked against the amount actually owed now, not against what the client last saw.
+      if (!preActionChoices(h, seat).includes(cmd.preAction)) throw new RoomError('PRE_ACTION_UNAVAILABLE');
+      dropPreAction(state, seat);
       state.preActions[seat] = cmd.preAction;
       return;
     }
@@ -643,7 +663,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       const s = state.seats[seat];
       s.away = cmd.away;
       if (!cmd.away && (state.mode === 'local' || s.connections > 0)) s.autoFold = false;
-      if (cmd.away) delete state.preActions[seat];
+      if (cmd.away) dropPreAction(state, seat);
       log(state, now, seat, cmd.away ? 'awayOn' : 'awayOff');
       return;
     }
@@ -759,7 +779,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       state.status = 'playing';
       state.paused = false;
       state.undo = [];
-      state.preActions = {};
+      clearPreActions(state);
       state.pendingImport = null;
       log(state, now, actorSeat === null ? null : (map[actorSeat] ?? null), 'started');
       return;
@@ -805,7 +825,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       if (!betweenHands(g)) throw new EngineError('HAND_IN_PROGRESS');
       state.game = startHand(g, now);
       state.undo = [];
-      state.preActions = {};
+      clearPreActions(state);
       state.claims = [];
       return;
     }
@@ -815,7 +835,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       const prev = state.undo.pop();
       if (!prev) throw new RoomError('NOTHING_TO_UNDO');
       state.game = prev;
-      state.preActions = {};
+      clearPreActions(state);
       state.claims = [];
       state.status = prev.finished ? 'finished' : 'playing';
       log(state, now, actorSeat, 'undo');
@@ -874,7 +894,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       if (!s) throw new RoomError('INVALID_SEAT');
       if (state.mode === 'online' && s.connections > 0) throw new RoomError('PLAYER_ONLINE');
       s.autoFold = true;
-      delete state.preActions[cmd.seat];
+      dropPreAction(state, cmd.seat);
       log(state, now, actorSeat, 'forceFold', { seat: cmd.seat });
       return;
     }
@@ -905,7 +925,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       state.game = resetChips(g, r.chips);
       syncStatus(state);
       state.undo = [];
-      state.preActions = {};
+      clearPreActions(state);
       log(state, now, actorSeat, 'chipReset');
       return;
     }
@@ -922,7 +942,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
         // Unfinished hand is voided: confirmed balances are those before the hand.
         state.game = { ...state.game, hand: null };
       }
-      state.preActions = {};
+      clearPreActions(state);
       state.undo = [];
       log(state, now, actorSeat, 'ended');
       return;
@@ -933,7 +953,7 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
       state.status = 'lobby';
       state.game = null;
       state.undo = [];
-      state.preActions = {};
+      clearPreActions(state);
       state.paused = false;
       state.pendingImport = null;
       state.claims = [];
@@ -947,6 +967,38 @@ function execute(state: RoomState, actor: Actor, cmd: Command, now: number, out:
     case 'host:deleteRoom': {
       requireHost(state, actor);
       return 'deleted';
+    }
+  }
+}
+
+/** Remove a seat's pre-action and any notice about it. */
+function dropPreAction(state: RoomState, seat: number) {
+  delete state.preActions[seat];
+  delete state.preActionNotices[seat];
+}
+
+function clearPreActions(state: RoomState) {
+  state.preActions = {};
+  state.preActionNotices = {};
+}
+
+/**
+ * Keep pre-actions valid against the authoritative hand: everything goes when
+ * the hand is over (never carried into the next one); a selection that is no
+ * longer on offer is removed. A cancelled Check leaves a notice so the player
+ * knows to choose; it never turns into a fold or a call.
+ */
+function sweepPreActions(state: RoomState) {
+  const h = state.game?.hand;
+  if (!h || (h.phase !== 'betting' && h.phase !== 'street-complete')) {
+    if (Object.keys(state.preActions).length || Object.keys(state.preActionNotices).length) clearPreActions(state);
+    return;
+  }
+  for (const [k, pre] of Object.entries(state.preActions)) {
+    const seat = Number(k);
+    if (!state.seats[seat] || !preActionChoices(h, seat).includes(pre)) {
+      dropPreAction(state, seat);
+      if (pre === 'check' && state.seats[seat] && owedForPreAction(h, seat)) state.preActionNotices[seat] = 'checkCanceled';
     }
   }
 }
@@ -965,6 +1017,7 @@ export function isAutoFold(state: RoomState, seat: number): boolean {
  */
 export function runAutomation(state: RoomState, now: number): void {
   for (let guard = 0; guard < 100; guard++) {
+    sweepPreActions(state);
     const g = state.game;
     const h = g?.hand;
     if (!g || !h || h.phase !== 'betting' || h.toAct === null || state.paused || state.status !== 'playing') return;
@@ -973,13 +1026,19 @@ export function runAutomation(state: RoomState, now: number): void {
     let action: PlayerAction | null = null;
     if (isAutoFold(state, seat)) {
       action = { type: 'fold' };
-      delete state.preActions[seat];
+      dropPreAction(state, seat);
     } else {
       const pre = state.preActions[seat];
-      if (pre === 'fold') action = { type: 'fold' };
-      else if (pre === 'checkfold') action = legal.canCheck ? { type: 'check' } : { type: 'fold' };
-      else if (pre === 'callany') action = legal.canCheck ? { type: 'check' } : { type: 'call' };
-      delete state.preActions[seat];
+      // Nothing selected: the player decides (a cancelled-Check notice stays visible).
+      if (!pre) return;
+      delete state.preActions[seat]; // executed (or cancelled) at most once
+      const resolved = resolvePreAction(pre, legal);
+      if (resolved === 'cancel') {
+        // Check never folds or calls: hand the decision back to the player (normal timers apply).
+        state.preActionNotices[seat] = 'checkCanceled';
+        return;
+      }
+      action = resolved;
     }
     if (!action) return;
     state.game = applyAction(g, seat, action, { auto: true });
@@ -1019,6 +1078,7 @@ export function toView(state: RoomState, viewerSeat: number | null, now: number)
     pots: !hand || hand.phase === 'complete' ? [] : hand.phase === 'betting' ? displayPots(hand.seats) : currentPots(hand),
     nextLevelInMs: g && state.status === 'playing' ? msUntilNextLevel(g, now) : null,
     myPreAction: viewerSeat !== null ? (state.preActions[viewerSeat] ?? null) : null,
+    preActionNotice: viewerSeat !== null ? (state.preActionNotices[viewerSeat] ?? null) : null,
     viewerSeat,
     canUndo: state.undo.length > 0,
     pendingImport: state.pendingImport ? resolvePendingForView(state) : null,

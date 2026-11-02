@@ -1,14 +1,14 @@
 {
   "name": "@feltcircle/room-core",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "description": "Platform-independent room state machine and server runtime shared by Local Mode, Node.js and Cloudflare.",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@feltcircle/poker-engine": "1.0.0",
-    "@feltcircle/chip-export": "1.0.0",
-    "@feltcircle/game-protocol": "1.0.0"
+    "@feltcircle/poker-engine": "0.1.0",
+    "@feltcircle/chip-export": "0.1.0",
+    "@feltcircle/game-protocol": "0.1.0"
   }
 }
